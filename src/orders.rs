@@ -8,6 +8,5 @@ struct DrinkSection {
     color: Color,
 }
 
-
 #[derive(Component, Debug, Clone)]
 pub struct Order;

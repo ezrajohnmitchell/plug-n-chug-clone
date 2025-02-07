@@ -1,17 +1,25 @@
+use std::time::Duration;
+
+use avian2d::prelude::{Collider, GravityScale, LinearVelocity, RigidBody};
 use bevy::{
-    app::{Plugin, Startup},
+    app::{Plugin, Startup, Update},
     asset::Assets,
     color::Color,
     ecs::{
         component::Component,
-        system::{Commands, ResMut},
+        system::{Commands, Query, Res, ResMut, Resource},
     },
-    math::primitives::Rectangle,
+    math::{
+        primitives::{Circle, Rectangle},
+        Vec2,
+    },
     render::mesh::{Mesh, Mesh2d},
     sprite::{ColorMaterial, MeshMaterial2d},
+    time::{Time, Timer, Virtual},
     transform::components::Transform,
 };
-use tap_state::{DrinkInput, TapStatePlugin};
+use rand::Rng;
+use tap_state::{DrinkInput, TapState, TapStatePlugin};
 
 use crate::{orders::Order, WINDOW_HEIGHT, WINDOW_WIDTH};
 
@@ -22,7 +30,56 @@ pub struct TapsPlugin;
 impl Plugin for TapsPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.add_plugins(TapStatePlugin);
+        app.insert_resource(TapDispenseTimer(Timer::new(
+            Duration::from_millis(200),
+            bevy::time::TimerMode::Repeating,
+        )));
         app.add_systems(Startup, add_taps);
+        app.add_systems(Update, run_taps);
+    }
+}
+
+#[derive(Resource)]
+struct TapDispenseTimer(Timer);
+#[derive(Component)]
+pub struct Drop;
+
+fn run_taps(
+    mut commands: Commands,
+    mut tap_state: ResMut<TapState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut query: Query<(&Input, &Tap, &Transform)>,
+    time: Res<Time<Virtual>>,
+    mut timer: ResMut<TapDispenseTimer>,
+) {
+    timer.0.tick(time.delta());
+
+    let mut rng = rand::rng();
+
+    for (input, tap, transform) in &mut query {
+        if let Some(ref mut output_state) = tap_state.get_output_state(input.0.clone()) {
+            if output_state.on && timer.0.just_finished() {
+                if let Some(color) = output_state.get_drop() {
+                    let mut new_transform = transform.clone();
+                    new_transform.translation += transform.up() * 70.;
+                    new_transform.translation += -transform.forward() * 10.;
+                    commands.spawn((
+                        Mesh2d(meshes.add(Circle::new(3.))),
+                        MeshMaterial2d(materials.add(color.clone())),
+                        new_transform,
+                        Drop,
+                        RigidBody::Dynamic,
+                        GravityScale(2.0),
+                        LinearVelocity(Vec2 {
+                            x: rng.random_range(-5.0..5.),
+                            y: -rng.random_range(80.0..110.),
+                        }),
+                        Collider::circle(3.),
+                    ));
+                };
+            }
+        }
     }
 }
 
@@ -37,6 +94,8 @@ fn add_taps(
         Mesh2d(bar_table_shape),
         MeshMaterial2d(materials.add(bar_table_color)),
         Transform::from_xyz(0., (-WINDOW_HEIGHT / 2.) + 25., 5.),
+        RigidBody::Static,
+        Collider::rectangle(800., 50.),
     ));
 
     const TAP_HEIGHT: f32 = 150.;

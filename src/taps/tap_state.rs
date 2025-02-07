@@ -1,8 +1,11 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    time::Duration,
+};
 
 use bevy::{
     app::{Plugin, Startup, Update},
-    color::Color,
+    color::{Color, Luminance},
     ecs::{
         component::Component,
         system::{Commands, Res, ResMut, Resource},
@@ -10,7 +13,7 @@ use bevy::{
     time::{Time, Timer, Virtual},
 };
 
-const MAX_PENDING_DROPS:usize = 2;
+const MAX_PENDING_DROPS: usize = 2;
 
 pub struct TapStatePlugin;
 
@@ -33,6 +36,7 @@ fn timers(time: Res<Time<Virtual>>, mut tap_state: ResMut<TapState>) {
 pub struct TapState {
     connections: HashMap<DrinkOutput, Option<DrinkInput>>,
     outputs: HashMap<DrinkOutput, OutputState>,
+    speed: usize,
 }
 
 impl TapState {
@@ -63,10 +67,18 @@ impl TapState {
         TapState {
             connections,
             outputs,
+            speed: 1,
         }
     }
 
     pub fn make_connection(&mut self, output: DrinkOutput, input: DrinkInput) {
+        for (output, input_option) in self.connections.iter_mut(){
+            if let Some(stored_input) = input_option {
+                if *stored_input == input {
+                    *input_option = Option::None;
+                }
+            }
+        }
         self.connections
             .insert(output.clone(), Option::Some(input.clone()));
     }
@@ -105,6 +117,17 @@ impl TapState {
             output_state.tick(time);
         }
     }
+
+    pub fn get_output_state(&mut self, input: DrinkInput) -> Option<&mut OutputState> {
+        for (output, input_option) in self.connections.iter_mut() {
+            if let Some(stored_input) = input_option {
+                if input == *stored_input {
+                    return self.outputs.get_mut(&output.clone());
+                }
+            }
+        }
+        Option::None
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -129,7 +152,7 @@ pub enum DrinkOutput {
 pub struct OutputState {
     pending_presses: usize,
     press_available_on: Timer,
-    on: bool,
+    pub on: bool,
     output_type: OutputType,
 }
 
@@ -195,6 +218,18 @@ impl OutputState {
             _ => {}
         }
     }
+
+    pub fn get_drop(&mut self) -> Option<Color> {
+        match &mut self.output_type {
+            OutputType::Color(color_output_state) => Option::Some(
+                color_output_state
+                    .start_color
+                    .clone()
+                    .lighter(color_output_state.light),
+            ),
+            OutputType::Mixer(mixer_output_state) => mixer_output_state.mixer.pop_front(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -213,14 +248,14 @@ impl ColorOutputState {
     fn new(color: Color) -> ColorOutputState {
         ColorOutputState {
             start_color: color,
-            light: 1.0,
+            light: 0.0,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct MixerOutputState {
-    mixer: [Option<Color>; 64],
+    mixer: VecDeque<Color>,
     mixer_on: bool,
 }
 
@@ -228,7 +263,7 @@ impl MixerOutputState {
     fn new() -> MixerOutputState {
         MixerOutputState {
             mixer_on: false,
-            mixer: [Option::None; 64],
+            mixer: VecDeque::with_capacity(64),
         }
     }
 }

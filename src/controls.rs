@@ -57,6 +57,9 @@ fn control_system(
         } else if keys.just_pressed(KeyCode::Numpad5) {
             tap_state.make_connection(output.clone(), DrinkInput::Mixer2);
             selected_tap.0 = Option::None;
+        } else if keys.just_pressed(KeyCode::Numpad0){
+            tap_state.disconnect(output.clone());
+            selected_tap.0 = Option::None;
         } else if keys.just_pressed(KeyCode::ArrowUp) {
             tap_state.output_switch(true, output.clone());
             selected_tap.0 = Option::None;

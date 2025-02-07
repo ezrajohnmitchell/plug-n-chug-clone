@@ -1,3 +1,4 @@
+use avian2d::PhysicsPlugins;
 use bevy::{
     prelude::*,
     utils::default,
@@ -38,6 +39,7 @@ fn main() {
             }),
             // LogDiagnosticsPlugin::default(),
             // FrameTimeDiagnosticsPlugin,
+            PhysicsPlugins::default().with_length_unit(200.),
             TapsPlugin,
             ControlPlugin,
         ))
