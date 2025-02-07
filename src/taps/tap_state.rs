@@ -72,7 +72,7 @@ impl TapState {
     }
 
     pub fn make_connection(&mut self, output: DrinkOutput, input: DrinkInput) {
-        for (output, input_option) in self.connections.iter_mut(){
+        for (output, input_option) in self.connections.iter_mut() {
             if let Some(stored_input) = input_option {
                 if *stored_input == input {
                     *input_option = Option::None;
@@ -160,7 +160,7 @@ impl OutputState {
     fn new_color(color: Color) -> OutputState {
         OutputState {
             on: false,
-            press_available_on: Timer::new(Duration::from_millis(500), bevy::time::TimerMode::Once),
+            press_available_on: Timer::new(Duration::from_millis(250), bevy::time::TimerMode::Once),
             pending_presses: 0,
             output_type: OutputType::Color(ColorOutputState::new(color)),
         }
@@ -169,7 +169,7 @@ impl OutputState {
     fn new_mixer() -> OutputState {
         OutputState {
             on: false,
-            press_available_on: Timer::new(Duration::from_millis(500), bevy::time::TimerMode::Once),
+            press_available_on: Timer::new(Duration::from_millis(250), bevy::time::TimerMode::Once),
             pending_presses: 0,
             output_type: OutputType::Mixer(MixerOutputState::new()),
         }

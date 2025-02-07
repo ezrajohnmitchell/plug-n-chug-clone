@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use avian2d::prelude::{Collider, GravityScale, LinearVelocity, RigidBody};
 use bevy::{
     app::{Plugin, Startup, Update},
     asset::Assets,
     color::Color,
     ecs::{
         component::Component,
+        event::EventReader,
         system::{Commands, Query, Res, ResMut, Resource},
     },
     math::{
@@ -17,6 +17,9 @@ use bevy::{
     sprite::{ColorMaterial, MeshMaterial2d},
     time::{Time, Timer, Virtual},
     transform::components::Transform,
+};
+use bevy_rapier2d::prelude::{
+    ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Sensor, Velocity,
 };
 use rand::Rng;
 use tap_state::{DrinkInput, TapState, TapStatePlugin};
@@ -36,6 +39,7 @@ impl Plugin for TapsPlugin {
         )));
         app.add_systems(Startup, add_taps);
         app.add_systems(Update, run_taps);
+        app.add_systems(Update, remove_fallen_drops);
     }
 }
 
@@ -59,7 +63,7 @@ fn run_taps(
 
     for (input, tap, transform) in &mut query {
         if let Some(ref mut output_state) = tap_state.get_output_state(input.0.clone()) {
-            if output_state.on && timer.0.just_finished() {
+            if timer.0.just_finished() && (output_state.consume_press() || output_state.on) {
                 if let Some(color) = output_state.get_drop() {
                     let mut new_transform = transform.clone();
                     new_transform.translation += transform.up() * 70.;
@@ -70,18 +74,33 @@ fn run_taps(
                         new_transform,
                         Drop,
                         RigidBody::Dynamic,
-                        GravityScale(2.0),
-                        LinearVelocity(Vec2 {
-                            x: rng.random_range(-5.0..5.),
-                            y: -rng.random_range(80.0..110.),
+                        GravityScale(0.4),
+                        Velocity::linear(Vec2 {
+                            x: rng.random_range(-10.0..10.),
+                            y: 0.
+                            // y: -rng.random_range(0.0..1.),
                         }),
-                        Collider::circle(3.),
+                        Collider::ball(3.),
                     ));
                 };
             }
         }
     }
 }
+
+fn remove_fallen_drops(mut commands: Commands, mut collision_events: EventReader<CollisionEvent>) {
+    for event in collision_events.read() {
+        match event {
+            CollisionEvent::Started(entity, entity1, collision_event_flags) => {
+                commands.entity(entity1.clone()).despawn();
+            },
+            CollisionEvent::Stopped(entity, entity1, collision_event_flags) => {},
+        }
+    }
+}
+
+#[derive(Component)]
+struct BarTable;
 
 fn add_taps(
     mut commands: Commands,
@@ -91,11 +110,13 @@ fn add_taps(
     let bar_table_shape = meshes.add(Rectangle::new(800., 50.));
     let bar_table_color = Color::hsl(28., 1., 0.13);
     commands.spawn((
+        BarTable,
         Mesh2d(bar_table_shape),
         MeshMaterial2d(materials.add(bar_table_color)),
         Transform::from_xyz(0., (-WINDOW_HEIGHT / 2.) + 25., 5.),
-        RigidBody::Static,
-        Collider::rectangle(800., 50.),
+        RigidBody::Fixed,
+        Collider::cuboid(400., 25.),
+        ActiveEvents::COLLISION_EVENTS,
     ));
 
     const TAP_HEIGHT: f32 = 150.;
