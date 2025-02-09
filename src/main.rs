@@ -7,11 +7,7 @@ use bevy::{
     utils::default,
     window::{PresentMode, Window, WindowPlugin, WindowTheme},
 };
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_rapier2d::{
-    plugin::{NoUserData, RapierPhysicsPlugin},
-    render::RapierDebugRenderPlugin,
-};
+use bevy_rapier2d::plugin::{NoUserData, RapierPhysicsPlugin};
 use controls::ControlPlugin;
 use orders::OrderPlugin;
 use taps::TapsPlugin;

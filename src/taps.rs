@@ -9,10 +9,9 @@ use bevy::{
         component::Component,
         entity::Entity,
         event::EventReader,
-        query::{With, Without},
+        query::With,
         system::{Commands, Query, Res, ResMut, Resource},
     },
-    hierarchy::Children,
     math::{
         primitives::{Circle, Rectangle},
         Vec2,
@@ -21,20 +20,15 @@ use bevy::{
     sprite::{ColorMaterial, MeshMaterial2d},
     time::{Time, Timer, Virtual},
     transform::components::Transform,
-    utils::hashbrown::hash_set::Iter,
 };
-use bevy_rapier2d::{
-    parry::query,
-    prelude::{
-        ActiveCollisionTypes, ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody,
-        Sensor, Velocity,
-    },
-};
+use bevy_rapier2d::prelude::{
+        ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Velocity,
+    };
 use rand::Rng;
 use tap_state::{DrinkInput, TapState, TapStatePlugin};
 
 use crate::{
-    orders::{OpenForOrder, Order, PendingOrder},
+    orders::OpenForOrder,
     WINDOW_HEIGHT, WINDOW_WIDTH,
 };
 
