@@ -13,6 +13,10 @@ use bevy::{
     time::{Time, Timer, Virtual},
 };
 
+pub const COLOR_RED: Color = Color::hsl(0.0, 1.0, 0.5);
+pub const COLOR_BLUE: Color = Color::hsl(232.0, 1.0, 0.5);
+pub const COLOR_YELLOW: Color = Color::hsl(65.0, 1.0, 0.5);
+
 const MAX_PENDING_DROPS: usize = 2;
 
 pub struct TapStatePlugin;
@@ -51,15 +55,15 @@ impl TapState {
         let mut outputs = HashMap::with_capacity(5);
         outputs.insert(
             DrinkOutput::Color1,
-            OutputState::new_color(Color::hsl(0.0, 1.0, 0.5)),
+            OutputState::new_color(COLOR_RED.clone()),
         ); //red
         outputs.insert(
             DrinkOutput::Color2,
-            OutputState::new_color(Color::hsl(232.0, 1.0, 0.5)),
+            OutputState::new_color(COLOR_BLUE.clone()),
         ); //blue
         outputs.insert(
             DrinkOutput::Color3,
-            OutputState::new_color(Color::hsl(65.0, 1.0, 0.5)),
+            OutputState::new_color(COLOR_YELLOW.clone()),
         ); //yellow
         outputs.insert(DrinkOutput::Mixer1, OutputState::new_mixer());
         outputs.insert(DrinkOutput::Mixer2, OutputState::new_mixer());

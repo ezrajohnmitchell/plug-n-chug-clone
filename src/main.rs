@@ -7,8 +7,13 @@ use bevy::{
     utils::default,
     window::{PresentMode, Window, WindowPlugin, WindowTheme},
 };
-use bevy_rapier2d::{plugin::{NoUserData, RapierPhysicsPlugin}, render::RapierDebugRenderPlugin};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_rapier2d::{
+    plugin::{NoUserData, RapierPhysicsPlugin},
+    render::RapierDebugRenderPlugin,
+};
 use controls::ControlPlugin;
+use orders::OrderPlugin;
 use taps::TapsPlugin;
 
 pub mod controls;
@@ -52,8 +57,10 @@ fn main() {
             // LogDiagnosticsPlugin::default(),
             // FrameTimeDiagnosticsPlugin,
             RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(200.),
+            // WorldInspectorPlugin::new(),
             // RapierDebugRenderPlugin::default(),
             TapsPlugin,
+            OrderPlugin,
             ControlPlugin,
         ))
         .add_systems(Startup, setup)

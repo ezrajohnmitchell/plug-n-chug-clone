@@ -4,11 +4,15 @@ use bevy::{
     app::{Plugin, Startup, Update},
     asset::Assets,
     color::Color,
+    core::Name,
     ecs::{
         component::Component,
+        entity::Entity,
         event::EventReader,
+        query::{With, Without},
         system::{Commands, Query, Res, ResMut, Resource},
     },
+    hierarchy::Children,
     math::{
         primitives::{Circle, Rectangle},
         Vec2,
@@ -17,14 +21,22 @@ use bevy::{
     sprite::{ColorMaterial, MeshMaterial2d},
     time::{Time, Timer, Virtual},
     transform::components::Transform,
+    utils::hashbrown::hash_set::Iter,
 };
-use bevy_rapier2d::prelude::{
-    ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Sensor, Velocity,
+use bevy_rapier2d::{
+    parry::query,
+    prelude::{
+        ActiveCollisionTypes, ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody,
+        Sensor, Velocity,
+    },
 };
 use rand::Rng;
 use tap_state::{DrinkInput, TapState, TapStatePlugin};
 
-use crate::{orders::Order, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::{
+    orders::{OpenForOrder, Order, PendingOrder},
+    WINDOW_HEIGHT, WINDOW_WIDTH,
+};
 
 pub mod tap_state;
 
@@ -46,7 +58,7 @@ impl Plugin for TapsPlugin {
 #[derive(Resource)]
 struct TapDispenseTimer(Timer);
 #[derive(Component)]
-pub struct Drop;
+pub struct ColorDrop(pub Color);
 
 fn run_taps(
     mut commands: Commands,
@@ -72,13 +84,12 @@ fn run_taps(
                         Mesh2d(meshes.add(Circle::new(3.))),
                         MeshMaterial2d(materials.add(color.clone())),
                         new_transform,
-                        Drop,
+                        ColorDrop(color.clone()),
                         RigidBody::Dynamic,
                         GravityScale(0.4),
                         Velocity::linear(Vec2 {
                             x: rng.random_range(-10.0..10.),
-                            y: 0.
-                            // y: -rng.random_range(0.0..1.),
+                            y: 0., // y: -rng.random_range(0.0..1.),
                         }),
                         Collider::ball(3.),
                     ));
@@ -88,19 +99,35 @@ fn run_taps(
     }
 }
 
-fn remove_fallen_drops(mut commands: Commands, mut collision_events: EventReader<CollisionEvent>) {
-    for event in collision_events.read() {
-        match event {
-            CollisionEvent::Started(entity, entity1, collision_event_flags) => {
-                commands.entity(entity1.clone()).despawn();
-            },
-            CollisionEvent::Stopped(entity, entity1, collision_event_flags) => {},
+fn remove_fallen_drops(
+    mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    bar_table: Query<Entity, With<BarTable>>,
+) {
+    match bar_table.get_single() {
+        Ok(bar_table) => {
+            for event in collision_events.read() {
+                match event {
+                    CollisionEvent::Started(entity, entity1, _collision_event_flags) => {
+                        if *entity == bar_table {
+                            commands.entity(entity1.clone()).despawn();
+                        } else if *entity1 == bar_table {
+                            commands.entity(entity.clone()).despawn();
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
-    }
+        Err(_) => {}
+    };
 }
 
 #[derive(Component)]
 struct BarTable;
+
+pub const TAP_HEIGHT: f32 = 150.;
+pub const TAP_WIDTH: f32 = 50.;
 
 fn add_taps(
     mut commands: Commands,
@@ -119,7 +146,6 @@ fn add_taps(
         ActiveEvents::COLLISION_EVENTS,
     ));
 
-    const TAP_HEIGHT: f32 = 150.;
     let tap_shape = meshes.add(Rectangle::new(50., TAP_HEIGHT));
     let tap_color = materials.add(Color::hsl(28., 0., 0.43));
 
@@ -130,6 +156,8 @@ fn add_taps(
         Input(DrinkInput::Tap1),
         Mesh2d(tap_shape.clone()),
         MeshMaterial2d(tap_color.clone()),
+        OpenForOrder::new(),
+        Name::new("TAP_1"),
         Transform::from_xyz(-x_dist, WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
     ));
     commands.spawn((
@@ -137,6 +165,8 @@ fn add_taps(
         Input(DrinkInput::Tap2),
         Mesh2d(tap_shape.clone()),
         MeshMaterial2d(tap_color.clone()),
+        OpenForOrder::new(),
+        Name::new("TAP_2"),
         Transform::from_xyz(0., WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
     ));
     commands.spawn((
@@ -144,6 +174,8 @@ fn add_taps(
         Input(DrinkInput::Tap3),
         Mesh2d(tap_shape.clone()),
         MeshMaterial2d(tap_color.clone()),
+        OpenForOrder::new(),
+        Name::new("TAP_3"),
         Transform::from_xyz(x_dist, WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
     ));
 
@@ -151,14 +183,8 @@ fn add_taps(
     commands.spawn((Mixer, Input(DrinkInput::Mixer2)));
 }
 
-#[derive(Component, Debug)]
-pub struct Tap(Option<Order>);
-
-impl Default for Tap {
-    fn default() -> Self {
-        Self(Option::None)
-    }
-}
+#[derive(Component, Debug, Default)]
+pub struct Tap;
 
 #[derive(Component, Debug, Default)]
 struct Mixer;
