@@ -15,7 +15,7 @@ difficulty = 0
 sections = [{ color = [64.0, 1.0, 0.5], size = 30 }]
 
 [[orders]]
-name = "Red/Yellow"
+name = "Red - Yellow"
 difficulty = 1
 sections = [
     { color = [0.0, 1.0, 0.5 ], size = 15 },
@@ -23,7 +23,7 @@ sections = [
 ]
 
 [[orders]]
-name = "Blue/Red"
+name = "Blue - Red"
 difficulty = 1
 sections = [
     { color = [232.0, 1.0, 0.5 ], size = 15 },
@@ -31,7 +31,7 @@ sections = [
 ]
 
 [[orders]]
-name = "Yellow/Blue"
+name = "Yellow - Blue"
 difficulty = 1
 sections = [
     { color = [65.0, 1.0, 0.5 ], size = 15 },

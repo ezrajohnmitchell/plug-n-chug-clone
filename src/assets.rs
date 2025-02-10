@@ -1,4 +1,4 @@
-use bevy::{app::Plugin, asset::Handle, ecs::system::Resource};
+use bevy::{app::Plugin, asset::Handle, ecs::system::Resource, text::Font};
 use bevy_asset_loader::asset_collection::AssetCollection;
 use toml_loader::{TomlAsset, TomlAssetPlugin};
 
@@ -16,4 +16,6 @@ impl Plugin for AssetInitializerPlugin {
 pub struct OrderAssets {
     #[asset(path = "orders.toml")]
     pub order_types: Handle<TomlAsset>,
+    #[asset(path="fonts/ARCADECLASSIC.TTF")]
+    pub order_font: Handle<Font>
 }

@@ -1,34 +1,23 @@
-use std::{iter, time::Duration};
+use std::{default, iter, time::Duration};
 
 use bevy::{
-    app::{Plugin, Update},
-    asset::{Assets, Handle},
-    color::{Alpha, Color, Luminance},
-    ecs::{
+    app::{Plugin, Update}, asset::{Assets, Handle}, color::{Alpha, Color, Luminance}, ecs::{
         component::Component,
         entity::Entity,
         event::EventReader,
         query::With,
         schedule::IntoSystemConfigs,
         system::{Commands, Query, Res, ResMut, Resource},
-    },
-    hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt, Parent},
-    math::primitives::Rectangle,
-    render::{
+    }, hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt, Parent}, math::primitives::Rectangle, render::{
         mesh::{Mesh, Mesh2d},
         view::Visibility,
-    },
-    sprite::{ColorMaterial, MeshMaterial2d},
-    state::{
+    }, sprite::{ColorMaterial, MeshMaterial2d}, state::{
         condition::in_state,
         state::{OnEnter, OnExit},
-    },
-    time::{Time, Timer},
-    transform::components::Transform,
-    utils::hashbrown::{
+    }, text::{Text2d, TextFont, TextLayout}, time::{Time, Timer}, transform::{self, components::Transform}, utils::{default, hashbrown::{
         hash_map::Entry::{Occupied, Vacant},
         HashMap,
-    },
+    }}
 };
 use bevy_rapier2d::{
     prelude::{ActiveEvents, Collider, CollisionEvent, RigidBody, Sensor},
@@ -272,12 +261,13 @@ fn assign_pending_orders(
     mut taps: Query<(Entity, &mut OpenForOrder), With<Tap>>,
     mesh_handles: Res<CupMeshes>,
     time: Res<Time>,
+    order_assets: Res<OrderAssets>
 ) {
     let mut pending_orders = pending_orders
         .iter()
         .choose_multiple(&mut rand::rng(), pending_orders.iter().len())
         .into_iter();
-    for (tap_id, mut order_start_timer) in taps.iter_mut() {
+    for (tap_id, mut order_start_timer ) in taps.iter_mut() {
         order_start_timer.0.tick(time.delta());
         if !order_start_timer.0.finished() {
             continue;
@@ -361,6 +351,17 @@ fn assign_pending_orders(
                             Transform::from_xyz(0.0, (CUP_HEIGHT / -2.) + CUP_THICKNESS, 0.0),
                             Sensor,
                             ActiveEvents::COLLISION_EVENTS,
+                        ));
+
+                        cup.spawn((
+                            Text2d::new(pending_order.0.name),
+                            TextFont {
+                                font: order_assets.order_font.clone(),
+                                font_size: 30.,
+                                ..default()
+                            },
+                            TextLayout::new_with_justify(bevy::text::JustifyText::Center),
+                            Transform::from_xyz(0., -CUP_HEIGHT  / 2. - 25., 5.)
                         ));
                     });
             });
