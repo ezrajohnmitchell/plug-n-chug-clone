@@ -4,7 +4,6 @@ use std::{
 };
 
 use bevy::{
-    app::{Plugin, Startup, Update},
     color::{Color, Luminance},
     ecs::{
         component::Component,
@@ -19,20 +18,11 @@ pub const COLOR_YELLOW: Color = Color::hsl(65.0, 1.0, 0.5);
 
 const MAX_PENDING_DROPS: usize = 2;
 
-pub struct TapStatePlugin;
-
-impl Plugin for TapStatePlugin {
-    fn build(&self, app: &mut bevy::app::App) {
-        app.add_systems(Startup, add_tap_state);
-        app.add_systems(Update, timers);
-    }
-}
-
-fn add_tap_state(mut commands: Commands) {
+pub fn add_tap_state(mut commands: Commands) {
     commands.insert_resource(TapState::new());
 }
 
-fn timers(time: Res<Time<Virtual>>, mut tap_state: ResMut<TapState>) {
+pub fn timers(time: Res<Time<Virtual>>, mut tap_state: ResMut<TapState>) {
     tap_state.tick(&time);
 }
 

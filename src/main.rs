@@ -1,3 +1,4 @@
+use assets::{AssetInitializerPlugin, OrderAssets};
 use bevy::{
     prelude::*,
     render::{
@@ -7,14 +8,14 @@ use bevy::{
     utils::default,
     window::{PresentMode, Window, WindowPlugin, WindowTheme},
 };
+use bevy_asset_loader::loading_state::{
+    config::ConfigureLoadingState, LoadingState, LoadingStateAppExt,
+};
 use bevy_rapier2d::plugin::{NoUserData, RapierPhysicsPlugin};
-use controls::ControlPlugin;
-use orders::OrderPlugin;
-use taps::TapsPlugin;
+use game::{GamePlugin, StatePlugin};
 
-pub mod controls;
-pub mod orders;
-pub mod taps;
+pub mod assets;
+pub mod game;
 
 pub const WINDOW_WIDTH: f32 = 800.;
 pub const WINDOW_HEIGHT: f32 = 400.;
@@ -55,15 +56,35 @@ fn main() {
             RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(200.),
             // WorldInspectorPlugin::new(),
             // RapierDebugRenderPlugin::default(),
-            TapsPlugin,
-            OrderPlugin,
-            ControlPlugin,
+            AssetInitializerPlugin,
+            GamePlugin::run_on_state(GameStates::Playing),
         ))
-        .add_systems(Startup, setup)
+        .init_state::<GameStates>()
+        .add_loading_state(
+            LoadingState::new(GameStates::AssetLoading)
+                .continue_to_state(GameStates::Playing)
+                .load_collection::<OrderAssets>(),
+        )
+        .add_systems(Startup, setup_camera)
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d::default());
     commands.insert_resource(ClearColor(Color::hsl(183., 1., 0.5)));
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+pub enum GameStates {
+    #[default]
+    AssetLoading,
+    StartMenu,
+    Playing,
+    EndScreen,
+}
+
+pub fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
+    for entity in &to_despawn {
+        commands.entity(entity).despawn();
+    }
 }

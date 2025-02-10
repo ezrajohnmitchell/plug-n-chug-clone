@@ -1,7 +1,7 @@
-use std::time::Duration;
+use std::{iter, time::Duration};
 
 use bevy::{
-    app::{Plugin, Startup, Update},
+    app::{Plugin, Update},
     asset::{Assets, Handle},
     color::{Alpha, Color, Luminance},
     ecs::{
@@ -9,6 +9,7 @@ use bevy::{
         entity::Entity,
         event::EventReader,
         query::With,
+        schedule::IntoSystemConfigs,
         system::{Commands, Query, Res, ResMut, Resource},
     },
     hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt, Parent},
@@ -18,30 +19,63 @@ use bevy::{
         view::Visibility,
     },
     sprite::{ColorMaterial, MeshMaterial2d},
+    state::{
+        condition::in_state,
+        state::{OnEnter, OnExit},
+    },
     time::{Time, Timer},
     transform::components::Transform,
+    utils::hashbrown::{
+        hash_map::Entry::{Occupied, Vacant},
+        HashMap,
+    },
 };
 use bevy_rapier2d::{
     prelude::{ActiveEvents, Collider, CollisionEvent, RigidBody, Sensor},
     rapier::prelude::CollisionEventFlags,
 };
+use order_config::OrderList;
 use rand::seq::{IndexedRandom, IteratorRandom};
 
-use crate::taps::{
-    tap_state::{COLOR_BLUE, COLOR_RED, COLOR_YELLOW},
-    ColorDrop, Tap, TAP_HEIGHT, TAP_WIDTH,
+use crate::{
+    assets::{toml_loader::TomlAsset, OrderAssets},
+    GameStates,
 };
 
-pub struct OrderPlugin;
+use super::{
+    taps::{
+        ColorDrop, Tap, TAP_HEIGHT, TAP_WIDTH,
+    },
+    GameScreen, StatePlugin,
+};
+
+mod order_config;
+
+pub struct OrderPlugin(GameStates);
 
 impl Plugin for OrderPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.add_systems(Startup, setup_orders);
-        app.add_systems(Startup, setup_cup_meshes);
-        app.add_systems(Update, spawn_orders);
-        app.add_systems(Update, assign_pending_orders);
-        app.add_systems(Update, add_drops_to_cups);
+        app.add_systems(OnEnter(self.0.clone()), (setup_orders, setup_cup_meshes));
+        app.add_systems(
+            Update,
+            (spawn_orders, assign_pending_orders, add_drops_to_cups, add_order_difficulty)
+                .run_if(in_state(self.0.clone())),
+        );
+        app.add_systems(OnExit(self.0.clone()), remove_resources);
     }
+}
+
+impl StatePlugin<OrderPlugin> for OrderPlugin {
+    fn run_on_state(state: GameStates) -> OrderPlugin {
+        OrderPlugin(state)
+    }
+}
+
+fn remove_resources(mut commands: Commands) {
+    commands.remove_resource::<AvailableOrders>();
+    commands.remove_resource::<CupMeshes>();
+    commands.remove_resource::<OrderSpawnTimer>();
+    commands.remove_resource::<OrdersWithDifficulty>();
 }
 
 #[derive(Component, Debug, Clone)]
@@ -49,37 +83,92 @@ pub struct PendingOrder(Order);
 
 #[derive(Component, Debug, Clone)]
 pub struct Order {
-    sections: [Color; 20], //treat 0 as buttom of the cup
+    sections: Vec<Color>, //treat 0 as buttom of the cup
     recieved: Vec<Color>,
     time_remaining: Timer,
+    name: String,
 }
 
 #[derive(Resource)]
-pub struct AvailableOrders(Vec<[Color; 20]>);
+pub struct AvailableOrders(Vec<(Vec<Color>, String)>);
 
-pub fn setup_orders(mut commands: Commands) {
-    let mut orders: Vec<[Color; 20]> = Vec::new();
+#[derive(Resource)]
+pub struct OrdersWithDifficulty(HashMap<u32, Vec<(Vec<Color>, String)>>);
 
-    let colors = [COLOR_RED, COLOR_BLUE, COLOR_YELLOW];
+#[derive(Component)]
+struct OrderDifficutlyAdder(Timer);
 
-    for color in colors {
-        for color2 in colors {
-            let mut order_arr = [COLOR_RED; 20];
-            for i in 0..10 {
-                order_arr[i] = color;
-            }
-            for i in 10..20 {
-                order_arr[i] = color2;
-            }
-            orders.push(order_arr);
-        }
+impl OrdersWithDifficulty {
+    fn get_starter_orders(&mut self) -> Vec<(Vec<Color>, String)> {
+        self.0
+            .remove(&0)
+            .expect("no orders were defined at difficulty 0")
     }
 
-    commands.insert_resource(AvailableOrders(orders));
+    fn get_lowest_difficulty_order(&mut self) -> Option<(Vec<Color>, String)> {
+        let order_option = match self.0.keys().min() {
+            Some(key) => match self.0.entry(*key) {
+                Occupied(o) => o.into_mut().pop(),
+                Vacant(_) => None,
+            },
+            None => None,
+        };
+        self.0.retain(|_, value| value.len() > 0);
+
+        order_option
+    }
+}
+
+pub fn setup_orders(
+    mut commands: Commands,
+    order_asset: Res<OrderAssets>,
+    toml_assets: Res<Assets<TomlAsset>>,
+) {
+    let toml_str = toml_assets
+        .get(order_asset.order_types.id())
+        .expect("orders.toml is missing")
+        .0
+        .as_str();
+    let order_list: OrderList = toml::from_str(toml_str).expect("orders.toml format is incorrect");
+
+    let mut orders: HashMap<u32, Vec<(Vec<Color>, String)>> = HashMap::new();
+    order_list.orders.iter().for_each(|order_config| {
+        let mut sections = Vec::new();
+        order_config.sections.iter().for_each(|section_config| {
+            let color = Color::hsl(
+                section_config.color[0],
+                section_config.color[1],
+                section_config.color[2],
+            );
+            sections.extend(iter::repeat(color).take(section_config.size));
+        });
+
+        match orders.entry(order_config.difficulty) {
+            Occupied(o) => {
+                let orders = o.into_mut();
+                orders.push((sections, order_config.name.clone()));
+            }
+            Vacant(v) => {
+                v.insert(vec![(sections, order_config.name.clone())]);
+            }
+        };
+    });
+
+    let mut orders = OrdersWithDifficulty(orders);
+
+    commands.insert_resource(AvailableOrders(orders.get_starter_orders()));
+    commands.insert_resource(orders);
     commands.insert_resource(OrderSpawnTimer(Timer::new(
         Duration::from_secs(3),
         bevy::time::TimerMode::Repeating,
     )));
+    commands.spawn((
+        OrderDifficutlyAdder(Timer::new(
+            Duration::from_secs(5),
+            bevy::time::TimerMode::Repeating,
+        )),
+        GameScreen,
+    ));
 }
 
 #[derive(Resource)]
@@ -96,10 +185,27 @@ fn spawn_orders(
         let order_to_spawn = available_orders.0.choose(&mut rand::rng());
         if let Some(order) = order_to_spawn {
             commands.spawn(PendingOrder(Order {
-                sections: order.clone(),
+                sections: order.0.clone(),
+                name: order.1.clone(),
                 recieved: Vec::new(),
                 time_remaining: Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once),
             }));
+        }
+    }
+}
+
+fn add_order_difficulty(
+    mut available_order: ResMut<AvailableOrders>,
+    mut orders_with_difficutly: ResMut<OrdersWithDifficulty>,
+    mut query: Query<&mut OrderDifficutlyAdder>,
+    time: Res<Time>,
+) {
+    if let Ok(mut timer) = query.get_single_mut() {
+        timer.0.tick(time.delta());
+        if timer.0.just_finished() {
+            if let Some(order) = orders_with_difficutly.get_lowest_difficulty_order() {
+                available_order.0.push(order);
+            }
         }
     }
 }
@@ -152,8 +258,11 @@ struct CupFillCollider;
 #[derive(Component)]
 pub struct OpenForOrder(Timer);
 impl OpenForOrder {
-    pub fn new() -> OpenForOrder{
-        OpenForOrder(Timer::new(Duration::from_secs(2), bevy::time::TimerMode::Once))
+    pub fn new() -> OpenForOrder {
+        OpenForOrder(Timer::new(
+            Duration::from_secs(2),
+            bevy::time::TimerMode::Once,
+        ))
     }
 }
 
@@ -162,14 +271,17 @@ fn assign_pending_orders(
     pending_orders: Query<(Entity, &PendingOrder)>,
     mut taps: Query<(Entity, &mut OpenForOrder), With<Tap>>,
     mesh_handles: Res<CupMeshes>,
-    time: Res<Time>
+    time: Res<Time>,
 ) {
-    let mut pending_orders = pending_orders.iter().choose_multiple(&mut rand::rng(), pending_orders.iter().len()).into_iter();
+    let mut pending_orders = pending_orders
+        .iter()
+        .choose_multiple(&mut rand::rng(), pending_orders.iter().len())
+        .into_iter();
     for (tap_id, mut order_start_timer) in taps.iter_mut() {
         order_start_timer.0.tick(time.delta());
         if !order_start_timer.0.finished() {
             continue;
-        } 
+        }
         let pending_order = match pending_orders.next() {
             Some((entity, order)) => {
                 commands.entity(entity).despawn();
@@ -242,7 +354,10 @@ fn assign_pending_orders(
                         //spawn bottom collider that collects drops
                         cup.spawn((
                             CupFillCollider,
-                            Collider::cuboid(CUP_WIDTH / 2. - CUP_THICKNESS * 2., CUP_THICKNESS / 2.),
+                            Collider::cuboid(
+                                CUP_WIDTH / 2. - CUP_THICKNESS * 2.,
+                            (CUP_HEIGHT - CUP_THICKNESS) / pending_order.0.sections.len() as f32 / 2.
+                            ),
                             Transform::from_xyz(0.0, (CUP_HEIGHT / -2.) + CUP_THICKNESS, 0.0),
                             Sensor,
                             ActiveEvents::COLLISION_EVENTS,
@@ -284,16 +399,22 @@ fn add_drops_to_cups(
                     Err(_) => continue,
                 };
 
-                let (order_entity, mut order, tap_id) = match active_orders.get_mut(collider_parent.get()) {
-                    Ok(res) => res,
-                    Err(_) => continue,
-                };
+                let (order_entity, mut order, tap_id) =
+                    match active_orders.get_mut(collider_parent.get()) {
+                        Ok(res) => res,
+                        Err(_) => continue,
+                    };
 
                 if order.recieved.len() >= order.sections.len() {
                     if let Some(entity) = commands.get_entity(order_entity) {
                         entity.despawn_recursive();
                         commands.entity(drop_entity).despawn();
-                        commands.entity(tap_id.get()).insert(OpenForOrder(Timer::new(Duration::from_secs(2), bevy::time::TimerMode::Once)));
+                        commands
+                            .entity(tap_id.get())
+                            .insert(OpenForOrder(Timer::new(
+                                Duration::from_secs(2),
+                                bevy::time::TimerMode::Once,
+                            )));
                     }
                     continue;
                 }

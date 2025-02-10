@@ -1,0 +1,39 @@
+#Colors in HSL
+[[orders]]
+name = "Red"
+difficulty = 0
+sections = [{ color = [0.0, 1.0, 0.5], size = 30 }]
+
+[[orders]]
+name = "Blue"
+difficulty = 0
+sections = [{ color = [232.0, 1.0, 0.5], size = 30 }]
+
+[[orders]]
+name = "Yellow"
+difficulty = 0
+sections = [{ color = [64.0, 1.0, 0.5], size = 30 }]
+
+[[orders]]
+name = "Red/Yellow"
+difficulty = 1
+sections = [
+    { color = [0.0, 1.0, 0.5 ], size = 15 },
+    { color = [65.0, 1.0, 0.5 ], size = 15 },
+]
+
+[[orders]]
+name = "Blue/Red"
+difficulty = 1
+sections = [
+    { color = [232.0, 1.0, 0.5 ], size = 15 },
+    { color = [0.0, 1.0, 0.5 ], size = 15 },
+]
+
+[[orders]]
+name = "Yellow/Blue"
+difficulty = 1
+sections = [
+    { color = [65.0, 1.0, 0.5 ], size = 15 },
+    { color = [232.0, 1.0, 0.5 ], size = 15 },
+]

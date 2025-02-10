@@ -1,18 +1,45 @@
 use bevy::{
     app::{Plugin, Update},
-    ecs::system::{Res, ResMut, Resource},
+    ecs::{
+        schedule::IntoSystemConfigs,
+        system::{Commands, Res, ResMut, Resource},
+    },
     input::{keyboard::KeyCode, ButtonInput},
+    state::{
+        condition::in_state,
+        state::{OnEnter, OnExit},
+    },
 };
 
-use crate::taps::tap_state::{DrinkInput, DrinkOutput, TapState};
+use crate::GameStates;
 
-pub struct ControlPlugin;
+use super::{
+    taps::{DrinkInput, DrinkOutput, TapState},
+    StatePlugin,
+};
+
+pub struct ControlPlugin(GameStates);
 
 impl Plugin for ControlPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.insert_resource(SelectedTap(Option::None));
-        app.add_systems(Update, control_system);
+        app.add_systems(OnEnter(self.0.clone()), add_resources);
+        app.add_systems(OnExit(self.0.clone()), remove_resources);
+        app.add_systems(Update, control_system.run_if(in_state(self.0.clone())));
     }
+}
+
+impl StatePlugin<ControlPlugin> for ControlPlugin {
+    fn run_on_state(state: GameStates) -> ControlPlugin {
+        ControlPlugin(state)
+    }
+}
+
+fn add_resources(mut commands: Commands) {
+    commands.insert_resource(SelectedTap(Option::None));
+}
+
+fn remove_resources(mut commands: Commands) {
+    commands.remove_resource::<SelectedTap>();
 }
 
 #[derive(Resource)]

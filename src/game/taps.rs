@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use bevy::{
-    app::{Plugin, Startup, Update},
+    app::{Plugin, Update},
     asset::Assets,
     color::Color,
     core::Name,
@@ -10,6 +10,7 @@ use bevy::{
         entity::Entity,
         event::EventReader,
         query::With,
+        schedule::IntoSystemConfigs,
         system::{Commands, Query, Res, ResMut, Resource},
     },
     math::{
@@ -18,35 +19,51 @@ use bevy::{
     },
     render::mesh::{Mesh, Mesh2d},
     sprite::{ColorMaterial, MeshMaterial2d},
+    state::{
+        condition::in_state,
+        state::{OnEnter, OnExit},
+    },
     time::{Time, Timer, Virtual},
     transform::components::Transform,
 };
 use bevy_rapier2d::prelude::{
-        ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Velocity,
-    };
-use rand::Rng;
-use tap_state::{DrinkInput, TapState, TapStatePlugin};
-
-use crate::{
-    orders::OpenForOrder,
-    WINDOW_HEIGHT, WINDOW_WIDTH,
+    ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Velocity,
 };
+use rand::Rng;
+pub use tap_state::{add_tap_state, timers, DrinkInput, DrinkOutput, TapState};
+
+use crate::{GameStates, WINDOW_HEIGHT, WINDOW_WIDTH};
+
+use super::{orders::OpenForOrder, GameScreen, StatePlugin};
 
 pub mod tap_state;
 
-pub struct TapsPlugin;
+pub struct TapsPlugin(GameStates);
 
 impl Plugin for TapsPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.add_plugins(TapStatePlugin);
         app.insert_resource(TapDispenseTimer(Timer::new(
             Duration::from_millis(200),
             bevy::time::TimerMode::Repeating,
         )));
-        app.add_systems(Startup, add_taps);
-        app.add_systems(Update, run_taps);
-        app.add_systems(Update, remove_fallen_drops);
+        app.add_systems(OnEnter(self.0.clone()), (add_tap_state, add_taps));
+        app.add_systems(
+            Update,
+            (timers, run_taps, remove_fallen_drops).run_if(in_state(self.0.clone())),
+        );
+        app.add_systems(OnExit(self.0.clone()), despawn_resources);
     }
+}
+
+impl StatePlugin<TapsPlugin> for TapsPlugin {
+    fn run_on_state(state: GameStates) -> TapsPlugin {
+        TapsPlugin(state)
+    }
+}
+
+fn despawn_resources(mut commands: Commands) {
+    commands.remove_resource::<TapState>();
+    commands.remove_resource::<TapDispenseTimer>();
 }
 
 #[derive(Resource)]
@@ -73,7 +90,7 @@ fn run_taps(
                 if let Some(color) = output_state.get_drop() {
                     let mut new_transform = transform.clone();
                     new_transform.translation += transform.up() * 70.;
-                    new_transform.translation += -transform.forward() * 10.;
+                    new_transform.translation += -transform.forward() * 2.;
                     commands.spawn((
                         Mesh2d(meshes.add(Circle::new(3.))),
                         MeshMaterial2d(materials.add(color.clone())),
@@ -86,6 +103,7 @@ fn run_taps(
                             y: 0., // y: -rng.random_range(0.0..1.),
                         }),
                         Collider::ball(3.),
+                        GameScreen,
                     ));
                 };
             }
@@ -138,6 +156,7 @@ fn add_taps(
         RigidBody::Fixed,
         Collider::cuboid(400., 25.),
         ActiveEvents::COLLISION_EVENTS,
+        GameScreen,
     ));
 
     let tap_shape = meshes.add(Rectangle::new(50., TAP_HEIGHT));
@@ -153,6 +172,7 @@ fn add_taps(
         OpenForOrder::new(),
         Name::new("TAP_1"),
         Transform::from_xyz(-x_dist, WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
+        GameScreen,
     ));
     commands.spawn((
         Tap::default(),
@@ -162,6 +182,7 @@ fn add_taps(
         OpenForOrder::new(),
         Name::new("TAP_2"),
         Transform::from_xyz(0., WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
+        GameScreen,
     ));
     commands.spawn((
         Tap::default(),
@@ -171,6 +192,7 @@ fn add_taps(
         OpenForOrder::new(),
         Name::new("TAP_3"),
         Transform::from_xyz(x_dist, WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
+        GameScreen,
     ));
 
     commands.spawn((Mixer, Input(DrinkInput::Mixer1)));
