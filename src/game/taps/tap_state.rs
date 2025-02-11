@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    color::{Color, Luminance},
+    color::{Color, Luminance, Mix},
     ecs::{
         component::Component,
         system::{Commands, Res, ResMut, Resource},
@@ -12,9 +12,9 @@ use bevy::{
     time::{Time, Timer, Virtual},
 };
 
-pub const COLOR_RED: Color = Color::hsl(0.0, 1.0, 0.5);
-pub const COLOR_BLUE: Color = Color::hsl(232.0, 1.0, 0.5);
-pub const COLOR_YELLOW: Color = Color::hsl(65.0, 1.0, 0.5);
+pub const COLOR_RED: Color = Color::linear_rgb(255., 0., 0.);
+pub const COLOR_BLUE: Color = Color::linear_rgb(0.0, 0., 255.);
+pub const COLOR_YELLOW: Color = Color::linear_rgb(234., 255., 0.);
 
 const MAX_PENDING_DROPS: usize = 2;
 
@@ -219,7 +219,7 @@ impl OutputState {
                 color_output_state
                     .start_color
                     .clone()
-                    .lighter(color_output_state.light),
+                    .mix(&Color::WHITE, color_output_state.light),
             ),
             OutputType::Mixer(mixer_output_state) => mixer_output_state.mixer.pop_front(),
         }

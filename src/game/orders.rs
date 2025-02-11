@@ -1,23 +1,38 @@
 use std::{default, iter, time::Duration};
 
 use bevy::{
-    app::{Plugin, Update}, asset::{Assets, Handle}, color::{Alpha, Color, Luminance}, ecs::{
+    app::{Plugin, Update},
+    asset::{Assets, Handle},
+    color::{Alpha, Color, LinearRgba, Luminance},
+    ecs::{
         component::Component,
         entity::Entity,
         event::EventReader,
         query::With,
         schedule::IntoSystemConfigs,
         system::{Commands, Query, Res, ResMut, Resource},
-    }, hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt, Parent}, math::primitives::Rectangle, render::{
+    },
+    hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt, Parent},
+    math::primitives::Rectangle,
+    render::{
         mesh::{Mesh, Mesh2d},
         view::Visibility,
-    }, sprite::{ColorMaterial, MeshMaterial2d}, state::{
+    },
+    sprite::{ColorMaterial, MeshMaterial2d},
+    state::{
         condition::in_state,
         state::{OnEnter, OnExit},
-    }, text::{Text2d, TextFont, TextLayout}, time::{Time, Timer}, transform::{self, components::Transform}, utils::{default, hashbrown::{
-        hash_map::Entry::{Occupied, Vacant},
-        HashMap,
-    }}
+    },
+    text::{Text2d, TextFont, TextLayout},
+    time::{Time, Timer},
+    transform::{self, components::Transform},
+    utils::{
+        default,
+        hashbrown::{
+            hash_map::Entry::{Occupied, Vacant},
+            HashMap,
+        },
+    },
 };
 use bevy_rapier2d::{
     prelude::{ActiveEvents, Collider, CollisionEvent, RigidBody, Sensor},
@@ -32,9 +47,7 @@ use crate::{
 };
 
 use super::{
-    taps::{
-        ColorDrop, Tap, TAP_HEIGHT, TAP_WIDTH,
-    },
+    taps::{ColorDrop, Tap, TAP_HEIGHT, TAP_WIDTH},
     GameScreen, StatePlugin,
 };
 
@@ -47,7 +60,12 @@ impl Plugin for OrderPlugin {
         app.add_systems(OnEnter(self.0.clone()), (setup_orders, setup_cup_meshes));
         app.add_systems(
             Update,
-            (spawn_orders, assign_pending_orders, add_drops_to_cups, add_order_difficulty)
+            (
+                spawn_orders,
+                assign_pending_orders,
+                add_drops_to_cups,
+                add_order_difficulty,
+            )
                 .run_if(in_state(self.0.clone())),
         );
         app.add_systems(OnExit(self.0.clone()), remove_resources);
@@ -124,7 +142,7 @@ pub fn setup_orders(
     order_list.orders.iter().for_each(|order_config| {
         let mut sections = Vec::new();
         order_config.sections.iter().for_each(|section_config| {
-            let color = Color::hsl(
+            let color = Color::linear_rgb(
                 section_config.color[0],
                 section_config.color[1],
                 section_config.color[2],
@@ -261,13 +279,13 @@ fn assign_pending_orders(
     mut taps: Query<(Entity, &mut OpenForOrder), With<Tap>>,
     mesh_handles: Res<CupMeshes>,
     time: Res<Time>,
-    order_assets: Res<OrderAssets>
+    order_assets: Res<OrderAssets>,
 ) {
     let mut pending_orders = pending_orders
         .iter()
         .choose_multiple(&mut rand::rng(), pending_orders.iter().len())
         .into_iter();
-    for (tap_id, mut order_start_timer ) in taps.iter_mut() {
+    for (tap_id, mut order_start_timer) in taps.iter_mut() {
         order_start_timer.0.tick(time.delta());
         if !order_start_timer.0.finished() {
             continue;
@@ -346,7 +364,9 @@ fn assign_pending_orders(
                             CupFillCollider,
                             Collider::cuboid(
                                 CUP_WIDTH / 2. - CUP_THICKNESS * 2.,
-                            (CUP_HEIGHT - CUP_THICKNESS) / pending_order.0.sections.len() as f32 / 2.
+                                (CUP_HEIGHT - CUP_THICKNESS)
+                                    / pending_order.0.sections.len() as f32
+                                    / 2.,
                             ),
                             Transform::from_xyz(0.0, (CUP_HEIGHT / -2.) + CUP_THICKNESS, 0.0),
                             Sensor,
@@ -361,7 +381,7 @@ fn assign_pending_orders(
                                 ..default()
                             },
                             TextLayout::new_with_justify(bevy::text::JustifyText::Center),
-                            Transform::from_xyz(0., -CUP_HEIGHT  / 2. - 25., 5.)
+                            Transform::from_xyz(0., -CUP_HEIGHT / 2. - 25., 5.),
                         ));
                     });
             });
@@ -416,6 +436,14 @@ fn add_drops_to_cups(
                                 Duration::from_secs(2),
                                 bevy::time::TimerMode::Once,
                             )));
+                        println!(
+                            "{} {}",
+                            order.name,
+                            match is_cup_failed(&order.sections, &order.recieved) {
+                                true => "failed",
+                                false => "success",
+                            }
+                        )
                     }
                     continue;
                 }
@@ -446,4 +474,69 @@ fn add_drops_to_cups(
             _ => {}
         }
     }
+}
+
+const COLOR_RANGE: f32 = 20.;
+const ERROR_PERCENT: f32 = 0.3;
+
+fn is_cup_failed(expected: &Vec<Color>, recieved: &Vec<Color>) -> bool {
+    let expected_sections = reduce_sections(expected);
+
+    let mut index = 0;
+    for (color, size) in expected_sections.iter() {
+        if index + size > recieved.len() {
+            return true;
+        };
+        let slice = &recieved[index..*size + index];
+        let equal_colors = slice
+            .iter()
+            .filter(|recieved_color| color_equal(color, *recieved_color, COLOR_RANGE))
+            .count();
+        if size - equal_colors > (*size as f32 * ERROR_PERCENT).ceil() as usize {
+            return true;
+        }
+        index += *size;
+    }
+
+    false
+}
+
+fn color_equal(color1: &Color, color2: &Color, range: f32) -> bool {
+    let color1 = color1.to_linear();
+    let color2 = color2.to_linear();
+
+    let red = color1.red;
+    let blue = color2.blue;
+    let green = color2.green;
+
+    color2.red >= red - range
+        && color2.red <= red + range
+        && color2.blue >= blue - range
+        && color2.blue <= blue + range
+        && color2.green >= green - range
+        && color2.green <= green + range
+}
+
+fn reduce_sections(array: &Vec<Color>) -> Vec<(Color, usize)> {
+    let mut array_sections: Vec<(Color, usize)> = Vec::new();
+
+    array
+        .iter()
+        .zip(array.iter().skip(1))
+        .for_each(|(color1, color2)| {
+            if color_equal(color1, color2, 0.1) {
+                match array_sections.last_mut() {
+                    Some(section) => {
+                        if color_equal(color1, &section.0, 0.1) {
+                            section.1 += 1;
+                        } else {
+                            array_sections.push((color1.clone(), 1))
+                        }
+                    }
+                    None => array_sections.push((color1.clone(), 2)),
+                }
+            }
+        });
+
+    array_sections
 }

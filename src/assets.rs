@@ -16,6 +16,6 @@ impl Plugin for AssetInitializerPlugin {
 pub struct OrderAssets {
     #[asset(path = "orders.toml")]
     pub order_types: Handle<TomlAsset>,
-    #[asset(path="fonts/ARCADECLASSIC.TTF")]
-    pub order_font: Handle<Font>
+    #[asset(path = "fonts/ARCADECLASSIC.TTF")]
+    pub order_font: Handle<Font>,
 }
