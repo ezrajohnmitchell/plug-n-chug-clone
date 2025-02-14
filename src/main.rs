@@ -11,7 +11,6 @@ use bevy::{
 use bevy_asset_loader::loading_state::{
     config::ConfigureLoadingState, LoadingState, LoadingStateAppExt,
 };
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_rapier2d::plugin::{NoUserData, RapierPhysicsPlugin};
 use game::{GamePlugin, StatePlugin};
 

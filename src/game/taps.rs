@@ -7,22 +7,22 @@ use bevy::{
         event::EventReader,
         query::With,
         schedule::IntoSystemConfigs,
-        system::{Commands, In, Query, Res, ResMut, Resource},
+        system::{Commands, Query, Res, ResMut, Resource},
     }, hierarchy::{BuildChildren, ChildBuild}, math::{
-        primitives::{Circle, Rectangle},
+        primitives::Circle,
         Vec2,
     }, render::{mesh::{Mesh, Mesh2d}, view::{InheritedVisibility, Visibility}}, sprite::{ColorMaterial, MeshMaterial2d, Sprite}, state::{
         condition::in_state,
         state::{OnEnter, OnExit},
-    }, time::{Time, Timer, Virtual}, transform::{self, components::Transform}
+    }, time::{Time, Timer, Virtual}, transform::{components::Transform}
 };
-use bevy_rapier2d::{prelude::{
+use bevy_rapier2d::prelude::{
     ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Velocity,
-}, rapier::crossbeam::epoch::Pointable};
+};
 use rand::Rng;
 pub use tap_state::{add_tap_state, timers, DrinkInput, DrinkOutput, TapState};
 
-use crate::{assets::BarAssets, GameStates, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::{assets::BarAssets, GameStates, WINDOW_HEIGHT};
 
 use super::{orders::OpenForOrder, GameScreen, StatePlugin};
 

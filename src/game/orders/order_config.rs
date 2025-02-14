@@ -1,7 +1,6 @@
-use bevy::{asset::Assets, ecs::system::{Commands, Res, Resource}};
+use bevy::ecs::system::Resource;
 use serde::Deserialize;
 
-use crate::assets::{toml_loader::TomlAsset, OrderAssets};
 
 #[derive(Deserialize)]
 pub struct OrderList {

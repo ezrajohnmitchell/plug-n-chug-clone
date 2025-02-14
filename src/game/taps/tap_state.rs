@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    color::{Color, Luminance, Mix},
+    color::{Color, Mix},
     ecs::{
         component::Component,
         system::{Commands, Res, ResMut, Resource},

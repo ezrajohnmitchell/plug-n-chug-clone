@@ -1,9 +1,9 @@
-use std::{default, iter, time::Duration};
+use std::{char::MAX, time::Duration};
 
 use bevy::{
     app::{Plugin, Update},
-    asset::{Asset, Assets, Handle},
-    color::{Alpha, Color, LinearRgba, Luminance},
+    asset::{Assets, Handle},
+    color::Color,
     ecs::{
         component::Component,
         entity::Entity,
@@ -25,7 +25,7 @@ use bevy::{
     },
     text::{Text2d, TextFont, TextLayout},
     time::{Time, Timer},
-    transform::{self, components::Transform},
+    transform::{components::Transform},
     utils::{
         default,
         hashbrown::{
@@ -43,7 +43,7 @@ use rand::{distr::{Distribution, StandardUniform}, seq::{IndexedRandom, Iterator
 
 use crate::{
     assets::{toml_loader::TomlAsset, OrderAssets},
-    GameStates, WINDOW_HEIGHT,
+    GameStates,
 };
 
 use super::{
@@ -525,7 +525,7 @@ fn add_drops_to_cups(
 }
 
 const COLOR_RANGE: f32 = 20.;
-const ERROR_PERCENT: f32 = 0.3;
+const MAX_FAILURES_PER_SECTION: usize = 4;
 
 fn is_cup_failed(expected: &Vec<Section>, recieved: &Vec<Color>, size: &OrderSize) -> bool {
     let mut index = 0;
@@ -540,7 +540,7 @@ fn is_cup_failed(expected: &Vec<Section>, recieved: &Vec<Color>, size: &OrderSiz
             .iter()
             .filter(|recieved_color| color_equal(&section.color, *recieved_color, COLOR_RANGE))
             .count();
-        if section_size - equal_colors > (section_size as f32 * ERROR_PERCENT).ceil() as usize {
+        if section_size - equal_colors > MAX_FAILURES_PER_SECTION {
             return true;
         }
         index += section_size;
