@@ -2,7 +2,7 @@ use std::{default, iter, time::Duration};
 
 use bevy::{
     app::{Plugin, Update},
-    asset::{Assets, Handle},
+    asset::{Asset, Assets, Handle},
     color::{Alpha, Color, LinearRgba, Luminance},
     ecs::{
         component::Component,
@@ -18,7 +18,7 @@ use bevy::{
         mesh::{Mesh, Mesh2d},
         view::Visibility,
     },
-    sprite::{ColorMaterial, MeshMaterial2d},
+    sprite::{ColorMaterial, MeshMaterial2d, Sprite},
     state::{
         condition::in_state,
         state::{OnEnter, OnExit},
@@ -35,19 +35,19 @@ use bevy::{
     },
 };
 use bevy_rapier2d::{
-    prelude::{ActiveEvents, Collider, CollisionEvent, RigidBody, Sensor},
+    prelude::{ActiveEvents, Collider, CollisionEvent, Sensor},
     rapier::prelude::CollisionEventFlags,
 };
-use order_config::OrderList;
-use rand::seq::{IndexedRandom, IteratorRandom};
+use order_config::{CupConfig, OrderConfig, OrderList, SectionConfig};
+use rand::{distr::{Distribution, StandardUniform}, seq::{IndexedRandom, IteratorRandom}, Rng};
 
 use crate::{
     assets::{toml_loader::TomlAsset, OrderAssets},
-    GameStates,
+    GameStates, WINDOW_HEIGHT,
 };
 
 use super::{
-    taps::{ColorDrop, Tap, TAP_HEIGHT, TAP_WIDTH},
+    taps::{ColorDrop, Tap},
     GameScreen, StatePlugin,
 };
 
@@ -64,7 +64,7 @@ impl Plugin for OrderPlugin {
                 spawn_orders,
                 assign_pending_orders,
                 add_drops_to_cups,
-                add_order_difficulty,
+                add_next_order_type,
             )
                 .run_if(in_state(self.0.clone())),
         );
@@ -80,39 +80,102 @@ impl StatePlugin<OrderPlugin> for OrderPlugin {
 
 fn remove_resources(mut commands: Commands) {
     commands.remove_resource::<AvailableOrders>();
-    commands.remove_resource::<CupMeshes>();
+    commands.remove_resource::<CupMaterials>();
     commands.remove_resource::<OrderSpawnTimer>();
     commands.remove_resource::<OrdersWithDifficulty>();
+    commands.remove_resource::<CupConfig>();
 }
 
 #[derive(Component, Debug, Clone)]
 pub struct PendingOrder(Order);
 
 #[derive(Component, Debug, Clone)]
-pub struct Order {
-    sections: Vec<Color>, //treat 0 as buttom of the cup
+pub struct Order{
+    order_type: OrderType,
     recieved: Vec<Color>,
     time_remaining: Timer,
+    size: OrderSize
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct OrderType {
+    sections: Vec<Section>, //treat 0 as buttom of the cup
     name: String,
 }
 
-#[derive(Resource)]
-pub struct AvailableOrders(Vec<(Vec<Color>, String)>);
+impl From<&OrderConfig> for OrderType {
+    fn from(value: &OrderConfig) -> Self {
+        let sections: Vec<Section> = value.sections.iter().map(|section_config| Section::from(section_config)).collect();
+
+        Self {
+            sections,
+            name: value.name.clone(),
+        }
+
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Section{
+    pub color: Color,
+    pub size: usize
+}
+
+impl From<&SectionConfig> for Section {
+    fn from(value: &SectionConfig) -> Self {
+            let color = Color::linear_rgb(
+                value.color[0],
+                value.color[1],
+                value.color[2],
+            );
+
+            Self {
+                color,
+                size: value.size
+            }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum OrderSize {
+    Small,
+    Medium,
+    Large
+}
+
+impl Default for OrderSize {
+    fn default() -> Self {
+        OrderSize::Medium
+    }
+}
+
+impl Distribution<OrderSize> for StandardUniform {
+    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> OrderSize {
+        match rng.random_range(0..3) {
+           0 => OrderSize::Small,
+           1 => OrderSize::Medium,
+           _ => OrderSize::Large
+        }
+    }
+}
 
 #[derive(Resource)]
-pub struct OrdersWithDifficulty(HashMap<u32, Vec<(Vec<Color>, String)>>);
+pub struct AvailableOrders(Vec<OrderType>);
+
+#[derive(Resource)]
+pub struct OrdersWithDifficulty(HashMap<u32, Vec<OrderType>>);
 
 #[derive(Component)]
 struct OrderDifficutlyAdder(Timer);
 
 impl OrdersWithDifficulty {
-    fn get_starter_orders(&mut self) -> Vec<(Vec<Color>, String)> {
+    fn get_starter_orders(&mut self) -> Vec<OrderType> {
         self.0
             .remove(&0)
             .expect("no orders were defined at difficulty 0")
     }
 
-    fn get_lowest_difficulty_order(&mut self) -> Option<(Vec<Color>, String)> {
+    fn get_lowest_difficulty_order(&mut self) -> Option<OrderType> {
         let order_option = match self.0.keys().min() {
             Some(key) => match self.0.entry(*key) {
                 Occupied(o) => o.into_mut().pop(),
@@ -138,25 +201,17 @@ pub fn setup_orders(
         .as_str();
     let order_list: OrderList = toml::from_str(toml_str).expect("orders.toml format is incorrect");
 
-    let mut orders: HashMap<u32, Vec<(Vec<Color>, String)>> = HashMap::new();
+    let mut orders: HashMap<u32, Vec<OrderType>> = HashMap::new();
     order_list.orders.iter().for_each(|order_config| {
-        let mut sections = Vec::new();
-        order_config.sections.iter().for_each(|section_config| {
-            let color = Color::linear_rgb(
-                section_config.color[0],
-                section_config.color[1],
-                section_config.color[2],
-            );
-            sections.extend(iter::repeat(color).take(section_config.size));
-        });
+        let order_type = OrderType::from(order_config);
 
         match orders.entry(order_config.difficulty) {
             Occupied(o) => {
                 let orders = o.into_mut();
-                orders.push((sections, order_config.name.clone()));
+                orders.push(order_type);
             }
             Vacant(v) => {
-                v.insert(vec![(sections, order_config.name.clone())]);
+                v.insert(vec![order_type]);
             }
         };
     });
@@ -190,18 +245,18 @@ fn spawn_orders(
     order_timer.0.tick(time.delta());
     if order_timer.0.just_finished() {
         let order_to_spawn = available_orders.0.choose(&mut rand::rng());
-        if let Some(order) = order_to_spawn {
+        if let Some(order_type) = order_to_spawn {
             commands.spawn(PendingOrder(Order {
-                sections: order.0.clone(),
-                name: order.1.clone(),
+                order_type: order_type.clone(),
                 recieved: Vec::new(),
                 time_remaining: Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once),
+                size: rand::rng().random()
             }));
         }
     }
 }
 
-fn add_order_difficulty(
+fn add_next_order_type(
     mut available_order: ResMut<AvailableOrders>,
     mut orders_with_difficutly: ResMut<OrdersWithDifficulty>,
     mut query: Query<&mut OrderDifficutlyAdder>,
@@ -227,36 +282,27 @@ pub struct CupDivider;
 pub struct CupWall;
 
 #[derive(Resource)]
-struct CupMeshes {
-    cup_wall_mesh: Handle<Mesh>,
-    cup_base_mesh: Handle<Mesh>,
-    cup_material: Handle<ColorMaterial>,
-    divider_mesh: Handle<Mesh>,
+struct CupMaterials {
     divider_material: Handle<ColorMaterial>,
 }
 
-const CUP_HEIGHT: f32 = TAP_HEIGHT * 0.8;
-const CUP_WIDTH: f32 = TAP_WIDTH * 1.8;
-const CUP_THICKNESS: f32 = 10.0;
-
 pub fn setup_cup_meshes(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    toml_assets: Res<Assets<TomlAsset>>,
+    order_asset: Res<OrderAssets>,
 ) {
-    commands.insert_resource(CupMeshes {
-        cup_wall_mesh: meshes.add(Rectangle::new(CUP_THICKNESS, CUP_HEIGHT)),
-        cup_base_mesh: meshes.add(Rectangle::new(
-            CUP_WIDTH - (CUP_THICKNESS * 2.),
-            CUP_THICKNESS,
-        )),
-        cup_material: materials.add(Color::BLACK),
-        divider_mesh: meshes.add(Rectangle::new(
-            CUP_WIDTH - (CUP_THICKNESS * 2.),
-            CUP_THICKNESS / 2.,
-        )),
-        divider_material: materials.add(Color::BLACK.lighter(0.4).with_alpha(0.8)),
+    let toml_str = toml_assets
+        .get(order_asset.cup_config.id())
+        .expect("orders.toml is missing")
+        .0
+        .as_str();
+    let cup_config: CupConfig = toml::from_str(toml_str).expect("orders.toml format is incorrect");
+
+    commands.insert_resource(CupMaterials {
+        divider_material: materials.add(Color::linear_rgb(cup_config.divider_color[0], cup_config.divider_color[1], cup_config.divider_color[2])),
     });
+    commands.insert_resource(cup_config);
 }
 
 #[derive(Component)]
@@ -277,9 +323,11 @@ fn assign_pending_orders(
     mut commands: Commands,
     pending_orders: Query<(Entity, &PendingOrder)>,
     mut taps: Query<(Entity, &mut OpenForOrder), With<Tap>>,
-    mesh_handles: Res<CupMeshes>,
+    divider_material: Res<CupMaterials>,
+    mut meshes: ResMut<Assets<Mesh>>,
     time: Res<Time>,
     order_assets: Res<OrderAssets>,
+    cup_config: Res<CupConfig>
 ) {
     let mut pending_orders = pending_orders
         .iter()
@@ -305,54 +353,47 @@ fn assign_pending_orders(
                 parent
                     .spawn((
                         Cup,
+                        Sprite::from_image(match &pending_order.0.size {
+                            OrderSize::Small => order_assets.cup_small.clone(),
+                            OrderSize::Medium => order_assets.cup_medium.clone(),
+                            OrderSize::Large => order_assets.cup_large.clone(),
+                        }),
                         pending_order.0.clone(),
-                        Transform::from_xyz(0., -TAP_HEIGHT / 2. + CUP_HEIGHT / 2., 40.),
+                        Transform::from_xyz(0., -12. + (- 151. / 2.) + cup_config.cup_height / 2., 40.),
                         Visibility::Visible,
                     ))
                     .with_children(|cup| {
-                        //spawn walls
+                        let (cup_width, cup_inner_width)= match &pending_order.0.size {
+                                OrderSize::Small => (cup_config.cup_small_width, cup_config.cup_small_inner_width),
+                                OrderSize::Medium => (cup_config.cup_medium_width, cup_config.cup_medium_inner_width),
+                                OrderSize::Large => (cup_config.cup_large_width, cup_config.cup_large_inner_width),
+                            };
+
+                        //spawn handle
                         cup.spawn((
-                            CupWall,
-                            Mesh2d(mesh_handles.cup_wall_mesh.clone()),
-                            MeshMaterial2d(mesh_handles.cup_material.clone()),
-                            RigidBody::Fixed,
-                            Transform::from_xyz(-CUP_WIDTH / 2. + CUP_THICKNESS / 2., 0., 0.),
-                        ));
-                        cup.spawn((
-                            CupWall,
-                            Mesh2d(mesh_handles.cup_wall_mesh.clone()),
-                            MeshMaterial2d(mesh_handles.cup_material.clone()),
-                            RigidBody::Fixed,
-                            Transform::from_xyz(CUP_WIDTH / 2. - CUP_THICKNESS / 2., 0., 0.),
-                        ));
-                        cup.spawn((
-                            CupWall,
-                            Mesh2d(mesh_handles.cup_base_mesh.clone()),
-                            MeshMaterial2d(mesh_handles.cup_material.clone()),
-                            RigidBody::Fixed,
-                            Transform::from_xyz(0., -CUP_HEIGHT / 2. + CUP_THICKNESS / 2., 0.),
+                            Sprite::from_image(order_assets.cup_handle.clone()),
+                            Transform::from_xyz(cup_width / 2. + 2., 0., 0.)
                         ));
 
                         //put dividers between different colors
                         let mut dividers: Vec<usize> = Vec::new();
-                        let sections = &pending_order.0.sections;
-
-                        for i in 1..sections.len() {
-                            if sections[i] != sections[i - 1] {
-                                dividers.push(i - 1);
-                            }
-                        }
+                        let order_size_multiplier = get_order_size(&pending_order.0.size);
+                        let total_sections = pending_order.0.order_type.sections.iter().fold(0 as usize, |acc, section| {
+                            let val = acc + (section.size * order_size_multiplier);
+                            dividers.push(val);
+                            val
+                        });
+                        dividers.pop();
 
                         for divider_pos in dividers.iter() {
                             cup.spawn((
                                 CupDivider,
-                                Mesh2d(mesh_handles.divider_mesh.clone()),
-                                MeshMaterial2d(mesh_handles.divider_material.clone()),
+                                Mesh2d(meshes.add(Rectangle::new(cup_inner_width, 2.))),
+                                MeshMaterial2d(divider_material.divider_material.clone()),
                                 Transform::from_xyz(
                                     0.0,
-                                    (CUP_HEIGHT / -2.)
-                                        + CUP_THICKNESS
-                                        + (CUP_HEIGHT / sections.len() as f32
+                                    (cup_config.cup_height / -2. + cup_config.cup_bottom_thickness)
+                                        + (cup_config.cup_height / total_sections as f32
                                             * *divider_pos as f32),
                                     0.0,
                                 ),
@@ -363,25 +404,25 @@ fn assign_pending_orders(
                         cup.spawn((
                             CupFillCollider,
                             Collider::cuboid(
-                                CUP_WIDTH / 2. - CUP_THICKNESS * 2.,
-                                (CUP_HEIGHT - CUP_THICKNESS)
-                                    / pending_order.0.sections.len() as f32
-                                    / 2.,
+                                cup_inner_width / 2.,
+                                (cup_config.cup_height - cup_config.cup_bottom_thickness)
+                                    / total_sections as f32
+                                    / 2. + cup_config.cup_bottom_thickness,
                             ),
-                            Transform::from_xyz(0.0, (CUP_HEIGHT / -2.) + CUP_THICKNESS, 0.0),
+                            Transform::from_xyz(0.0, cup_config.cup_height / -2., 0.0),
                             Sensor,
                             ActiveEvents::COLLISION_EVENTS,
                         ));
 
                         cup.spawn((
-                            Text2d::new(pending_order.0.name),
+                            Text2d::new(pending_order.0.order_type.name.clone()),
                             TextFont {
                                 font: order_assets.order_font.clone(),
-                                font_size: 30.,
+                                font_size: 20.,
                                 ..default()
                             },
                             TextLayout::new_with_justify(bevy::text::JustifyText::Center),
-                            Transform::from_xyz(0., -CUP_HEIGHT / 2. - 25., 5.),
+                            Transform::from_xyz(0., -cup_config.cup_height / 2. - 25., 5.),
                         ));
                     });
             });
@@ -399,6 +440,7 @@ fn add_drops_to_cups(
     drops: Query<(&ColorDrop, Entity)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    cup_config: Res<CupConfig>
 ) {
     for event in collision_events.read() {
         match event {
@@ -425,8 +467,9 @@ fn add_drops_to_cups(
                         Ok(res) => res,
                         Err(_) => continue,
                     };
+                let total_sections: usize = order.order_type.sections.iter().map(|section| section.size).sum::<usize>() * get_order_size(&order.size);
 
-                if order.recieved.len() >= order.sections.len() {
+                if order.recieved.len() >= total_sections {
                     if let Some(entity) = commands.get_entity(order_entity) {
                         entity.despawn_recursive();
                         commands.entity(drop_entity).despawn();
@@ -438,8 +481,8 @@ fn add_drops_to_cups(
                             )));
                         println!(
                             "{} {}",
-                            order.name,
-                            match is_cup_failed(&order.sections, &order.recieved) {
+                            order.order_type.name,
+                            match is_cup_failed(&order.order_type.sections, &order.recieved, &order.size) {
                                 true => "failed",
                                 false => "success",
                             }
@@ -449,20 +492,25 @@ fn add_drops_to_cups(
                 }
                 order.recieved.push(color.0.clone());
 
-                let section_height = (CUP_HEIGHT - CUP_THICKNESS) / order.sections.len() as f32;
+                let cup_inner_width = match &order.size {
+                    OrderSize::Small => cup_config.cup_small_inner_width,
+                    OrderSize::Medium => cup_config.cup_medium_inner_width,
+                    OrderSize::Large => cup_config.cup_large_inner_width,
+                };
+
+                let section_height = (cup_config.cup_height - cup_config.cup_bottom_thickness)/ total_sections as f32;
                 commands.entity(order_entity).with_child((
                     CupFill,
                     Mesh2d(meshes.add(Rectangle::new(
-                        CUP_WIDTH - (CUP_THICKNESS * 2.),
+                        cup_inner_width,
                         section_height,
                     ))),
                     MeshMaterial2d(materials.add(color.0.clone())),
                     Transform::from_xyz(
                         0.0,
-                        (CUP_HEIGHT / -2.)
-                            + (CUP_THICKNESS / 2.)
+                        ((cup_config.cup_height  - cup_config.cup_bottom_thickness)/ -2.)
                             + section_height * order.recieved.len() as f32
-                            - 1.,
+                            + cup_config.cup_bottom_thickness,
                         -1.0,
                     ),
                 ));
@@ -479,23 +527,23 @@ fn add_drops_to_cups(
 const COLOR_RANGE: f32 = 20.;
 const ERROR_PERCENT: f32 = 0.3;
 
-fn is_cup_failed(expected: &Vec<Color>, recieved: &Vec<Color>) -> bool {
-    let expected_sections = reduce_sections(expected);
-
+fn is_cup_failed(expected: &Vec<Section>, recieved: &Vec<Color>, size: &OrderSize) -> bool {
     let mut index = 0;
-    for (color, size) in expected_sections.iter() {
-        if index + size > recieved.len() {
+    for section in expected.iter() {
+        let section_size = section.size * get_order_size(size);
+
+        if index + section_size > recieved.len() {
             return true;
         };
-        let slice = &recieved[index..*size + index];
+        let slice = &recieved[index..section_size + index];
         let equal_colors = slice
             .iter()
-            .filter(|recieved_color| color_equal(color, *recieved_color, COLOR_RANGE))
+            .filter(|recieved_color| color_equal(&section.color, *recieved_color, COLOR_RANGE))
             .count();
-        if size - equal_colors > (*size as f32 * ERROR_PERCENT).ceil() as usize {
+        if section_size - equal_colors > (section_size as f32 * ERROR_PERCENT).ceil() as usize {
             return true;
         }
-        index += *size;
+        index += section_size;
     }
 
     false
@@ -517,26 +565,10 @@ fn color_equal(color1: &Color, color2: &Color, range: f32) -> bool {
         && color2.green <= green + range
 }
 
-fn reduce_sections(array: &Vec<Color>) -> Vec<(Color, usize)> {
-    let mut array_sections: Vec<(Color, usize)> = Vec::new();
-
-    array
-        .iter()
-        .zip(array.iter().skip(1))
-        .for_each(|(color1, color2)| {
-            if color_equal(color1, color2, 0.1) {
-                match array_sections.last_mut() {
-                    Some(section) => {
-                        if color_equal(color1, &section.0, 0.1) {
-                            section.1 += 1;
-                        } else {
-                            array_sections.push((color1.clone(), 1))
-                        }
-                    }
-                    None => array_sections.push((color1.clone(), 2)),
-                }
-            }
-        });
-
-    array_sections
+fn get_order_size(size: &OrderSize) -> usize {
+        match size {
+            OrderSize::Small => 1,
+            OrderSize::Medium => 2,
+            OrderSize::Large => 4,
+        }
 }

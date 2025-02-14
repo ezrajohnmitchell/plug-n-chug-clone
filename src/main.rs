@@ -1,4 +1,4 @@
-use assets::{AssetInitializerPlugin, OrderAssets};
+use assets::{AssetInitializerPlugin, BarAssets, OrderAssets};
 use bevy::{
     prelude::*,
     render::{
@@ -11,6 +11,7 @@ use bevy::{
 use bevy_asset_loader::loading_state::{
     config::ConfigureLoadingState, LoadingState, LoadingStateAppExt,
 };
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_rapier2d::plugin::{NoUserData, RapierPhysicsPlugin};
 use game::{GamePlugin, StatePlugin};
 
@@ -63,18 +64,22 @@ fn main() {
         .add_loading_state(
             LoadingState::new(GameStates::AssetLoading)
                 .continue_to_state(GameStates::Playing)
-                .load_collection::<OrderAssets>(),
+                .load_collection::<OrderAssets>()
+                .load_collection::<BarAssets>(),
         )
-        .add_systems(Startup, setup_camera)
+        .add_systems(Startup, setup)
         .run();
 }
+#[derive(Resource)]
+pub struct Score(usize);
 
-fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d::default());
+fn setup(mut commands: Commands) {
+    commands.spawn((Camera2d::default(), Msaa::Sample2));
     commands.insert_resource(ClearColor(Color::hsl(183., 1., 0.5)));
+    commands.insert_resource(Score(0));
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum GameStates {
     #[default]
     AssetLoading,

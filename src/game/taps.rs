@@ -1,38 +1,28 @@
 use std::time::Duration;
 
 use bevy::{
-    app::{Plugin, Update},
-    asset::Assets,
-    color::Color,
-    core::Name,
-    ecs::{
+    app::{Plugin, Update}, asset::Assets, color::Color, core::Name, ecs::{
         component::Component,
         entity::Entity,
         event::EventReader,
         query::With,
         schedule::IntoSystemConfigs,
-        system::{Commands, Query, Res, ResMut, Resource},
-    },
-    math::{
+        system::{Commands, In, Query, Res, ResMut, Resource},
+    }, hierarchy::{BuildChildren, ChildBuild}, math::{
         primitives::{Circle, Rectangle},
         Vec2,
-    },
-    render::mesh::{Mesh, Mesh2d},
-    sprite::{ColorMaterial, MeshMaterial2d},
-    state::{
+    }, render::{mesh::{Mesh, Mesh2d}, view::{InheritedVisibility, Visibility}}, sprite::{ColorMaterial, MeshMaterial2d, Sprite}, state::{
         condition::in_state,
         state::{OnEnter, OnExit},
-    },
-    time::{Time, Timer, Virtual},
-    transform::components::Transform,
+    }, time::{Time, Timer, Virtual}, transform::{self, components::Transform}
 };
-use bevy_rapier2d::prelude::{
+use bevy_rapier2d::{prelude::{
     ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Velocity,
-};
+}, rapier::crossbeam::epoch::Pointable};
 use rand::Rng;
 pub use tap_state::{add_tap_state, timers, DrinkInput, DrinkOutput, TapState};
 
-use crate::{GameStates, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::{assets::BarAssets, GameStates, WINDOW_HEIGHT, WINDOW_WIDTH};
 
 use super::{orders::OpenForOrder, GameScreen, StatePlugin};
 
@@ -76,7 +66,7 @@ fn run_taps(
     mut tap_state: ResMut<TapState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut query: Query<(&Input, &Tap, &Transform)>,
+    mut query: Query<(&Input, &Transform)>,
     time: Res<Time<Virtual>>,
     mut timer: ResMut<TapDispenseTimer>,
 ) {
@@ -84,15 +74,14 @@ fn run_taps(
 
     let mut rng = rand::rng();
 
-    for (input, tap, transform) in &mut query {
+    for (input, transform) in &mut query {
         if let Some(ref mut output_state) = tap_state.get_output_state(input.0.clone()) {
             if timer.0.just_finished() && (output_state.consume_press() || output_state.on) {
                 if let Some(color) = output_state.get_drop() {
                     let mut new_transform = transform.clone();
-                    new_transform.translation += transform.up() * 70.;
                     new_transform.translation += -transform.forward() * 2.;
                     commands.spawn((
-                        Mesh2d(meshes.add(Circle::new(3.))),
+                        Mesh2d(meshes.add(Circle::new(2.))),
                         MeshMaterial2d(materials.add(color.clone())),
                         new_transform,
                         ColorDrop(color.clone()),
@@ -102,7 +91,7 @@ fn run_taps(
                             x: rng.random_range(-10.0..10.),
                             y: 0., // y: -rng.random_range(0.0..1.),
                         }),
-                        Collider::ball(3.),
+                        Collider::ball(2.),
                         GameScreen,
                     ));
                 };
@@ -131,72 +120,69 @@ fn remove_fallen_drops(
                 }
             }
         }
-        Err(_) => {}
+        Err(_) => {
+        }
     };
 }
 
 #[derive(Component)]
 struct BarTable;
 
-pub const TAP_HEIGHT: f32 = 150.;
-pub const TAP_WIDTH: f32 = 50.;
-
 fn add_taps(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    bar_assets: Res<BarAssets>
 ) {
-    let bar_table_shape = meshes.add(Rectangle::new(800., 50.));
-    let bar_table_color = Color::hsl(28., 1., 0.13);
+    //background
+    commands.spawn((
+        Sprite::from_image(bar_assets.background.clone()),
+        Transform::from_xyz(0., 0., -100.),
+        GameScreen
+    ));
+
+    //bar table 
     commands.spawn((
         BarTable,
-        Mesh2d(bar_table_shape),
-        MeshMaterial2d(materials.add(bar_table_color)),
-        Transform::from_xyz(0., (-WINDOW_HEIGHT / 2.) + 25., 5.),
+        Sprite::from_image(bar_assets.bar_table.clone()),
+        Collider::cuboid(665. / 2., 82. / 2.),
         RigidBody::Fixed,
-        Collider::cuboid(400., 25.),
+        Transform::from_xyz(0., -WINDOW_HEIGHT / 2. + 82. / 2., 10.),
         ActiveEvents::COLLISION_EVENTS,
-        GameScreen,
+        GameScreen
     ));
 
-    let tap_shape = meshes.add(Rectangle::new(50., TAP_HEIGHT));
-    let tap_color = materials.add(Color::hsl(28., 0., 0.43));
-
-    let x_dist = WINDOW_WIDTH / 3.;
-
+    //taps
     commands.spawn((
-        Tap::default(),
-        Input(DrinkInput::Tap1),
-        Mesh2d(tap_shape.clone()),
-        MeshMaterial2d(tap_color.clone()),
-        OpenForOrder::new(),
-        Name::new("TAP_1"),
-        Transform::from_xyz(-x_dist, WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
+        Sprite::from_image(bar_assets.taps.clone()),
+        Transform::from_xyz(0., -WINDOW_HEIGHT / 2. + 82. + 151. / 2., 5.),
         GameScreen,
-    ));
-    commands.spawn((
-        Tap::default(),
-        Input(DrinkInput::Tap2),
-        Mesh2d(tap_shape.clone()),
-        MeshMaterial2d(tap_color.clone()),
-        OpenForOrder::new(),
-        Name::new("TAP_2"),
-        Transform::from_xyz(0., WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
-        GameScreen,
-    ));
-    commands.spawn((
-        Tap::default(),
-        Input(DrinkInput::Tap3),
-        Mesh2d(tap_shape.clone()),
-        MeshMaterial2d(tap_color.clone()),
-        OpenForOrder::new(),
-        Name::new("TAP_3"),
-        Transform::from_xyz(x_dist, WINDOW_HEIGHT / -2. + TAP_HEIGHT / 2. + 50., 6.),
-        GameScreen,
-    ));
-
-    commands.spawn((Mixer, Input(DrinkInput::Mixer1)));
-    commands.spawn((Mixer, Input(DrinkInput::Mixer2)));
+        Visibility::Visible,
+        Name::new("TAPS")
+    )).with_children(|parent| {
+        parent.spawn((
+            Tap,
+            Input(DrinkInput::Tap2),
+            Transform::from_xyz(0., 12., 4.),
+            OpenForOrder::new(),
+            Name::new("TAP 2"),
+            InheritedVisibility::VISIBLE
+        ));
+        parent.spawn((
+            Tap,
+            Input(DrinkInput::Tap1),
+            Transform::from_xyz(-149.,12., 4.),
+            OpenForOrder::new(),
+            Name::new("TAP 1"),
+            InheritedVisibility::VISIBLE
+        ));
+        parent.spawn((
+            Tap,
+            Input(DrinkInput::Tap3),
+            Transform::from_xyz(152., 12., 4.),
+            OpenForOrder::new(),
+            Name::new("TAP 3"),
+            InheritedVisibility::VISIBLE
+        ));
+    });
 }
 
 #[derive(Component, Debug, Default)]

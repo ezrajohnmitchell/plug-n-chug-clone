@@ -1,0 +1,10 @@
+cup_small_width = 38.0
+cup_small_inner_width = 36.0
+cup_medium_width = 60.0
+cup_medium_inner_width = 58.0
+cup_large_width = 79.0
+cup_large_inner_width =  77.0
+cup_height = 103.0
+cup_bottom_thickness = 2.0
+handle_width = 6.0
+divider_color = [184.0, 233.0, 231.0]
