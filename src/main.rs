@@ -73,7 +73,7 @@ fn main() {
 pub struct Score(usize);
 
 fn setup(mut commands: Commands) {
-    commands.spawn((Camera2d::default(), Msaa::Sample2));
+    commands.spawn((Camera2d::default(), Msaa::Off));
     commands.insert_resource(ClearColor(Color::hsl(183., 1., 0.5)));
     commands.insert_resource(Score(0));
 }
