@@ -1,18 +1,15 @@
 use assets::{AssetInitializerPlugin, BarAssets, OrderAssets};
 use bevy::{
-    prelude::*,
-    render::{
+    prelude::*, render::{
         settings::{Backends, RenderCreation, WgpuSettings},
         RenderPlugin,
-    },
-    utils::default,
-    window::{PresentMode, Window, WindowPlugin, WindowTheme},
+    }, sprite::Material2dPlugin, utils::default, window::{PresentMode, Window, WindowPlugin, WindowTheme}
 };
 use bevy_asset_loader::loading_state::{
     config::ConfigureLoadingState, LoadingState, LoadingStateAppExt,
 };
 use bevy_rapier2d::plugin::{NoUserData, RapierPhysicsPlugin};
-use game::{GamePlugin, StatePlugin};
+use game::{status_bar::StatusBarMaterial, GamePlugin, StatePlugin};
 
 pub mod assets;
 pub mod game;
@@ -57,6 +54,7 @@ fn main() {
             // WorldInspectorPlugin::new(),
             // RapierDebugRenderPlugin::default(),
             AssetInitializerPlugin,
+            Material2dPlugin::<StatusBarMaterial>::default(),
             GamePlugin::run_on_state(GameStates::Playing),
         ))
         .init_state::<GameStates>()
@@ -89,6 +87,6 @@ pub enum GameStates {
 
 pub fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
     for entity in &to_despawn {
-        commands.entity(entity).despawn();
+        commands.entity(entity).despawn_recursive();
     }
 }

@@ -8,3 +8,4 @@ cup_height = 103.0
 cup_bottom_thickness = 2.0
 handle_width = 8.0
 divider_color = [184.0, 233.0, 231.0]
+status_bar_width = 100.0

@@ -8,6 +8,7 @@ use crate::{despawn_screen, GameStates};
 pub mod controls;
 pub mod orders;
 pub mod taps;
+pub mod status_bar;
 
 pub struct GamePlugin(GameStates);
 
@@ -53,7 +54,7 @@ pub enum LevelState {
 }
 
 impl LevelState {
-    pub fn next(self, event: &Event) -> LevelState{
+    pub fn next(&self, event: &Event) -> LevelState{
         use Event::*;
         use LevelState::*;
 

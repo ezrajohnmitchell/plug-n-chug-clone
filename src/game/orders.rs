@@ -1,38 +1,26 @@
-use std::{char::MAX, time::Duration};
+use std::{any::Any, char::MAX, time::Duration};
 
 use bevy::{
-    app::{Plugin, Update},
-    asset::{Assets, Handle},
-    color::Color,
-    ecs::{
+    app::{Plugin, Update}, asset::{Assets, Handle}, color::Color, ecs::{
         component::Component,
         entity::Entity,
         event::EventReader,
         query::With,
         schedule::IntoSystemConfigs,
         system::{Commands, Query, Res, ResMut, Resource},
-    },
-    hierarchy::{BuildChildren, ChildBuild, DespawnRecursiveExt, Parent},
-    math::primitives::Rectangle,
-    render::{
+    }, hierarchy::{BuildChildren, ChildBuild, Children, DespawnRecursiveExt, Parent}, math::primitives::Rectangle, render::{
         mesh::{Mesh, Mesh2d},
         view::Visibility,
-    },
-    sprite::{ColorMaterial, MeshMaterial2d, Sprite},
-    state::{
+    }, sprite::{ColorMaterial, Material2d, MeshMaterial2d, Sprite}, state::{
         condition::in_state,
-        state::{OnEnter, OnExit},
-    },
-    text::{Text2d, TextFont, TextLayout},
-    time::{Time, Timer},
-    transform::{components::Transform},
-    utils::{
+        state::{NextState, OnEnter, OnExit, State},
+    }, text::{Text2d, TextFont, TextLayout}, time::{Time, Timer}, transform::components::Transform, utils::{
         default,
         hashbrown::{
             hash_map::Entry::{Occupied, Vacant},
             HashMap,
         },
-    },
+    }
 };
 use bevy_rapier2d::{
     prelude::{ActiveEvents, Collider, CollisionEvent, Sensor},
@@ -47,8 +35,7 @@ use crate::{
 };
 
 use super::{
-    taps::{ColorDrop, Tap},
-    GameScreen, StatePlugin,
+    status_bar::StatusBarMaterial, taps::{ColorDrop, Tap}, Event::FailedOrder, GameScreen, LevelState, StatePlugin
 };
 
 mod order_config;
@@ -65,6 +52,7 @@ impl Plugin for OrderPlugin {
                 assign_pending_orders,
                 add_drops_to_cups,
                 add_next_order_type,
+                update_order_timers,
             )
                 .run_if(in_state(self.0.clone())),
         );
@@ -249,7 +237,7 @@ fn spawn_orders(
             commands.spawn(PendingOrder(Order {
                 order_type: order_type.clone(),
                 recieved: Vec::new(),
-                time_remaining: Timer::new(Duration::from_secs(30), bevy::time::TimerMode::Once),
+                time_remaining: Timer::new(Duration::from_secs(60), bevy::time::TimerMode::Once),
                 size: rand::rng().random()
             }));
         }
@@ -327,7 +315,8 @@ fn assign_pending_orders(
     mut meshes: ResMut<Assets<Mesh>>,
     time: Res<Time>,
     order_assets: Res<OrderAssets>,
-    cup_config: Res<CupConfig>
+    cup_config: Res<CupConfig>,
+    mut status_bar_material: ResMut<Assets<StatusBarMaterial>>
 ) {
     let mut pending_orders = pending_orders
         .iter()
@@ -414,6 +403,7 @@ fn assign_pending_orders(
                             ActiveEvents::COLLISION_EVENTS,
                         ));
 
+                        //order name
                         cup.spawn((
                             Text2d::new(pending_order.0.order_type.name.clone()),
                             TextFont {
@@ -424,10 +414,23 @@ fn assign_pending_orders(
                             TextLayout::new_with_justify(bevy::text::JustifyText::Center),
                             Transform::from_xyz(0., -cup_config.cup_height / 2. - 25., 5.),
                         ));
+
+                        let status_bar_material = status_bar_material.add(StatusBarMaterial::new());
+
+                        //order status bar 
+                        cup.spawn((
+                            CupStatusBar(status_bar_material.clone()),
+                            Mesh2d(meshes.add(Rectangle::new(cup_config.status_bar_width, 20.))),
+                            MeshMaterial2d(status_bar_material),
+                            Transform::from_xyz(1., -cup_config.cup_height / 2. - 50., 0.)
+                        ));
                     });
             });
     }
 }
+
+#[derive(Component)]
+struct CupStatusBar(Handle<StatusBarMaterial>);
 
 #[derive(Component)]
 struct CupFill;
@@ -440,7 +443,9 @@ fn add_drops_to_cups(
     drops: Query<(&ColorDrop, Entity)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    cup_config: Res<CupConfig>
+    cup_config: Res<CupConfig>,
+    state: Res<State<LevelState>>,
+    mut next_state: ResMut<NextState<LevelState>>,
 ) {
     for event in collision_events.read() {
         match event {
@@ -479,14 +484,9 @@ fn add_drops_to_cups(
                                 Duration::from_secs(2),
                                 bevy::time::TimerMode::Once,
                             )));
-                        println!(
-                            "{} {}",
-                            order.order_type.name,
-                            match is_cup_failed(&order.order_type.sections, &order.recieved, &order.size) {
-                                true => "failed",
-                                false => "success",
+                            if is_cup_failed(&order.order_type.sections, &order.recieved, &order.size) {
+                                next_state.set(state.get().next(&FailedOrder));
                             }
-                        )
                     }
                     continue;
                 }
@@ -571,4 +571,40 @@ fn get_order_size(size: &OrderSize) -> usize {
             OrderSize::Medium => 2,
             OrderSize::Large => 4,
         }
+}
+
+fn update_order_timers(
+    mut orders: Query<(&mut Order, Entity, &Parent)>,
+    status_bars: Query<(&CupStatusBar, &Parent)>,
+    mut status_bar_materials: ResMut<Assets<StatusBarMaterial>>,
+    time: Res<Time>,
+    state: Res<State<LevelState>>,
+    mut next_state: ResMut<NextState<LevelState>>,
+    mut commands: Commands
+){
+    orders.iter_mut().for_each(|(mut order, _, _)| {
+        order.time_remaining.tick(time.delta());
+    });
+
+    for (status_bar_handle, parent) in status_bars.iter() {
+        if let Ok ((order, entity , tap)) = orders.get(parent.get()) {
+            match status_bar_materials.get_mut(status_bar_handle.0.id()) {
+                Some(material) => {
+                    let timer = &order.time_remaining;
+                    if timer.finished() {
+                        //send failure event
+                        next_state.set(state.get().next(&FailedOrder));
+                        commands.entity(entity).despawn_recursive();
+                        commands.entity(tap.get()).insert(OpenForOrder::new());
+                        continue;
+                    }
+
+                    material.percent = 1.0 - timer.elapsed().div_duration_f32(timer.duration());
+                },
+                None => todo!(),
+            }
+        }
+    }
+
+
 }

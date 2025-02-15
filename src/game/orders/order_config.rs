@@ -31,5 +31,6 @@ pub struct CupConfig {
     pub cup_height: f32,
     pub cup_bottom_thickness: f32,
     pub handle_width: f32,
-    pub divider_color: [f32; 3]
+    pub divider_color: [f32; 3],
+    pub status_bar_width: f32
 }
