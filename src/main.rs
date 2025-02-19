@@ -1,4 +1,4 @@
-use assets::{AssetInitializerPlugin, BarAssets, OrderAssets};
+use assets::{AssetInitializerPlugin, BarAssets, GameUiAssets, OrderAssets};
 use bevy::{
     prelude::*, render::{
         settings::{Backends, RenderCreation, WgpuSettings},
@@ -62,7 +62,8 @@ fn main() {
             LoadingState::new(GameStates::AssetLoading)
                 .continue_to_state(GameStates::Playing)
                 .load_collection::<OrderAssets>()
-                .load_collection::<BarAssets>(),
+                .load_collection::<BarAssets>()
+                .load_collection::<GameUiAssets>(),
         )
         .add_systems(Startup, setup)
         .run();

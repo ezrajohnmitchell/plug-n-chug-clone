@@ -14,7 +14,7 @@ use bevy::{
 use crate::GameStates;
 
 use super::{
-    taps::{DrinkInput, DrinkOutput, TapState},
+    taps::{tap_state::TapSpeed, DrinkInput, DrinkOutput, TapState},
     StatePlugin,
 };
 
@@ -100,5 +100,15 @@ fn control_system(
             tap_state.drop_pressed(output.clone());
             selected_tap.0 = Option::None;
         }
+    }
+
+    if keys.just_pressed(KeyCode::Digit1) {
+        tap_state.speed = TapSpeed::Slow
+    }
+    else if keys.just_pressed(KeyCode::Digit2) {
+        tap_state.speed = TapSpeed::Medium
+    }
+    else if keys.just_pressed(KeyCode::Digit3) {
+        tap_state.speed = TapSpeed::Fast
     }
 }

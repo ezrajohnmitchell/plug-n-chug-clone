@@ -14,7 +14,7 @@ use bevy::{
     }, render::{mesh::{Mesh, Mesh2d}, view::{InheritedVisibility, Visibility}}, sprite::{ColorMaterial, MeshMaterial2d, Sprite}, state::{
         condition::in_state,
         state::{OnEnter, OnExit},
-    }, time::{Time, Timer, Virtual}, transform::{components::Transform}
+    }, time::{Time, Timer, Virtual}, transform::components::Transform
 };
 use bevy_rapier2d::prelude::{
     ActiveEvents, Collider, CollisionEvent, GravityScale, RigidBody, Velocity,
@@ -32,10 +32,6 @@ pub struct TapsPlugin(GameStates);
 
 impl Plugin for TapsPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.insert_resource(TapDispenseTimer(Timer::new(
-            Duration::from_millis(200),
-            bevy::time::TimerMode::Repeating,
-        )));
         app.add_systems(OnEnter(self.0.clone()), (add_tap_state, add_taps));
         app.add_systems(
             Update,
@@ -53,31 +49,36 @@ impl StatePlugin<TapsPlugin> for TapsPlugin {
 
 fn despawn_resources(mut commands: Commands) {
     commands.remove_resource::<TapState>();
-    commands.remove_resource::<TapDispenseTimer>();
 }
 
-#[derive(Resource)]
-struct TapDispenseTimer(Timer);
+#[derive(Component, Debug, Clone)]
+pub struct TapDispenseTimer(Timer);
 #[derive(Component)]
 pub struct ColorDrop(pub Color);
+
 
 fn run_taps(
     mut commands: Commands,
     mut tap_state: ResMut<TapState>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut query: Query<(&Input, &Transform)>,
+    mut query: Query<(&Input, &Transform, &mut TapDispenseTimer)>,
     time: Res<Time<Virtual>>,
-    mut timer: ResMut<TapDispenseTimer>,
 ) {
-    timer.0.tick(time.delta());
-
     let mut rng = rand::rng();
 
-    for (input, transform) in &mut query {
-        if let Some(ref mut output_state) = tap_state.get_output_state(input.0.clone()) {
-            if timer.0.just_finished() && (output_state.consume_press() || output_state.on) {
+    for (input, transform, mut timer) in query.iter_mut() {
+        timer.0.tick(time.delta());
+
+        if let Some(output_state) = tap_state.get_output_state(input.0.clone()) {
+            if timer.0.finished() && (output_state.consume_press() || output_state.on) {
                 if let Some(color) = output_state.get_drop() {
+                    timer.0.set_duration(match tap_state.speed {
+                        tap_state::TapSpeed::Slow => Duration::from_millis(400),
+                        tap_state::TapSpeed::Medium => Duration::from_millis(200),
+                        tap_state::TapSpeed::Fast => Duration::from_millis(100),
+                    });
+                    timer.0.reset();
                     let mut new_transform = transform.clone();
                     new_transform.translation += -transform.forward() * 2.;
                     commands.spawn((
@@ -150,6 +151,8 @@ fn add_taps(
         GameScreen
     ));
 
+    let tap_timer = TapDispenseTimer(Timer::new(Duration::from_millis(200), bevy::time::TimerMode::Once));
+
     //taps
     commands.spawn((
         Sprite::from_image(bar_assets.taps.clone()),
@@ -161,6 +164,7 @@ fn add_taps(
         parent.spawn((
             Tap,
             Input(DrinkInput::Tap2),
+            tap_timer.clone(),
             Transform::from_xyz(0., 12., 4.),
             OpenForOrder::new(),
             Name::new("TAP 2"),
@@ -169,6 +173,7 @@ fn add_taps(
         parent.spawn((
             Tap,
             Input(DrinkInput::Tap1),
+            tap_timer.clone(),
             Transform::from_xyz(-149.,12., 4.),
             OpenForOrder::new(),
             Name::new("TAP 1"),
@@ -177,6 +182,7 @@ fn add_taps(
         parent.spawn((
             Tap,
             Input(DrinkInput::Tap3),
+            tap_timer.clone(),
             Transform::from_xyz(152., 12., 4.),
             OpenForOrder::new(),
             Name::new("TAP 3"),

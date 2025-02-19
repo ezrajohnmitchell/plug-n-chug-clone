@@ -39,3 +39,13 @@ pub struct BarAssets {
     #[asset(path = "sprites/taps.png")]
     pub taps: Handle<Image>,
 }
+
+#[derive(AssetCollection, Resource)]
+pub struct GameUiAssets {
+    #[asset(path = "sprites/chalkboard.png")]
+    pub chalkboard: Handle<Image>,
+    #[asset(path = "sprites/checkbox-failed.png")]
+    pub checkbox_failed: Handle<Image>,
+    #[asset(path = "sprites/checkbox-empty.png")]
+    pub checkbox_empty: Handle<Image>,
+}

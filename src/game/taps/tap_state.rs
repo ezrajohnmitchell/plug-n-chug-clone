@@ -30,7 +30,7 @@ pub fn timers(time: Res<Time<Virtual>>, mut tap_state: ResMut<TapState>) {
 pub struct TapState {
     connections: HashMap<DrinkOutput, Option<DrinkInput>>,
     outputs: HashMap<DrinkOutput, OutputState>,
-    speed: usize,
+    pub speed: TapSpeed,
 }
 
 impl TapState {
@@ -61,7 +61,7 @@ impl TapState {
         TapState {
             connections,
             outputs,
-            speed: 1,
+            speed: TapSpeed::Medium
         }
     }
 
@@ -122,6 +122,14 @@ impl TapState {
         }
         Option::None
     }
+}
+
+#[derive(Default, Debug)]
+pub enum TapSpeed {
+    Slow,
+    #[default]
+    Medium,
+    Fast
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
